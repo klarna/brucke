@@ -1,3 +1,4 @@
+log/
 doc/
 erl_crash.dump
 deps/
@@ -18,3 +19,6 @@ _rel/
 rebar.lock
 .eunit/
 .rebar/
+*.tmp
+relx
+x86_64/
