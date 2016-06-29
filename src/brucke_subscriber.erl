@@ -77,7 +77,7 @@ subscribe(#{ route              := Route
            , upstream_partition := UpstreamPartition
            , consumer           := subscribing
            } = State, BeginOffset, RetryCount) ->
-  {{UpstreamClientId, UpstreamTopic}, _Downstream, _Options} = Route,
+  #route{upstream = {UpstreamClientId, UpstreamTopic}} = Route,
   SubscribeOptions =
     case is_integer(BeginOffset) of
       true ->
@@ -111,8 +111,9 @@ handle_message_set(#{ route        := Route
                     , high_wm_offset = _HW
                     } = MsgSet,
   #{consumer := Pid} = State, %% assert
-  {{_UpstreamClientId, Topic}, %% assert
-   {DownstreamClientId, DownstreamTopic}, Options} = Route,
+  #route{ upstream = {_UpstreamClientId, Topic}
+        , downstream = {DownstreamClientId, DownstreamTopic}
+        , options = Options} = Route,
   NewPendingAcks =
     lists:map(
       fun(#kafka_message{ offset = Offset

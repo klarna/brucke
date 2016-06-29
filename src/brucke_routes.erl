@@ -32,14 +32,12 @@
          is_binary(N) orelse
          is_list(N) andalso N =/= [] andalso ?IS_PRINTABLE(hd(N)))).
 
-
-
 %%%_* APIs =====================================================================
 
--spec init([raw_route()]) -> ok | no_return().
+-spec init([proplists:proplist()]) -> ok | no_return().
 init(Routes) when is_list(Routes) ->
   ets:info(?ETS) =/= ?undef andalso exit({?ETS, already_created}),
-  ?ETS = ets:new(?ETS, [named_table, protected, set]),
+  ?ETS = ets:new(?ETS, [named_table, protected, set, {keypos, #route.upstream}]),
   try
     ok = do_init_loop(Routes)
   catch C : E ->
@@ -51,12 +49,11 @@ init(Other) ->
   erlang:exit(bad_routes_config).
 
 %% @doc Lookup in config cache for the message routing destination.
--spec lookup(brod_client_id(), kafka_topic()) ->
-        {brod_client_id(), kafka_topic(), route_options()} | false.
+-spec lookup(brod_client_id(), kafka_topic()) -> route() | false.
 lookup(UpstreamClientId, UpstreamTopic) ->
   case ets:lookup(?ETS, {UpstreamClientId, UpstreamTopic}) of
-    []          -> false;
-    [{C, T, O}] -> {C, T, O}
+    []      -> false;
+    [Route] -> Route
   end.
 
 %% @doc Delete Ets.
@@ -75,22 +72,30 @@ all() -> ets:tab2list(?ETS).
 
 %%%_* Internal functions =======================================================
 
--spec do_init_loop([raw_route()]) -> ok.
+-spec do_init_loop([proplists:proplist()]) -> ok.
 do_init_loop([]) -> ok;
-do_init_loop([Route | Rest]) ->
-  case validate_route(Route) of
-    ok ->
-      ok = insert_route(Route);
+do_init_loop([RawRoute | Rest]) ->
+  case validate_route(RawRoute) of
+    {ok, Routes} ->
+      ok = insert_routes(Routes);
     {error, Reasons} ->
       Rs = [[Reason, "\n"] || Reason <- Reasons],
-      ok = brucke_lib:log_skipped_route_alert(Route, Rs)
+      ok = brucke_lib:log_skipped_route_alert(RawRoute, Rs)
   end,
   do_init_loop(Rest).
 
--spec validate_route(raw_route()) -> ok | {error, [binary()]}.
-validate_route({{UpstreamClientId, UpstreamTopics},
-                {DownstreamClientId, DownstreamTopic},
-                Options}) ->
+-spec validate_route(proplists:proplist()) -> {ok, [route()]} | {error, [binary()]}.
+validate_route(Route) ->
+  {_, UpstreamClientId} = lists:keyfind(upstream_client, 1, Route),
+  {_, DownstreamClientId} = lists:keyfind(downstream_client, 1, Route),
+  {_, UpstreamTopics} = lists:keyfind(upstream_topics, 1, Route),
+  {_, DownstreamTopic} = lists:keyfind(downstream_topic, 1, Route),
+  RepartitioningStrategy = proplists:get_value(repartitioning_strategy,
+                                               Route, ?DEFAULT_REPARTITIONING_STRATEGY),
+  ProducerConfig = proplists:get_value(producer_config, Route, []),
+  ConsumerConfig = proplists:get_value(consumer_config, Route, []),
+  MaxPartitionsPerGroupMember = proplists:get_value(max_partitions_per_group_member,
+                                                    Route, ?MAX_PARTITIONS_PER_GROUP_MEMBER),
   ValidationResults0 =
     [ is_configured_client_id(UpstreamClientId) orelse
         <<"unknown upstream client id">>
@@ -99,23 +104,33 @@ validate_route({{UpstreamClientId, UpstreamTopics},
     , ?IS_VALID_TOPIC_NAME(DownstreamTopic) orelse
         invalid_topic_name(downstream, DownstreamTopic)
     , validate_upstream_topics(UpstreamClientId, UpstreamTopics)
-    , validate_route_options(Options)
+    , ?IS_VALID_REPARTITIONING_STRATEGY(RepartitioningStrategy) orelse
+          fmt("unknown repartitioning strategy ~p", [RepartitioningStrategy])
+    , (is_integer(MaxPartitionsPerGroupMember) andalso MaxPartitionsPerGroupMember > 0) orelse
+          fmt("max_partitions_per_group_member should be a positive integer", [])
     ],
   ValidationResults = lists:flatten(ValidationResults0),
   case [Result || Result <- ValidationResults, Result =/= true] of
     [] ->
-      case UpstreamClientId =:= DownstreamClientId of
-        true  -> ensure_no_loopback(UpstreamTopics, DownstreamTopic);
-        false -> ok
-      end;
+      ok = ensure_no_loopback(UpstreamClientId, DownstreamClientId, UpstreamTopics, DownstreamTopic),
+      Options = #{ repartitioning_strategy => RepartitioningStrategy
+                 , producer_config => ProducerConfig
+                 , consumer_config => ConsumerConfig
+                 , max_partitions_per_group_member => MaxPartitionsPerGroupMember},
+      MapF = fun(Topic) ->
+                 #route{ upstream = {UpstreamClientId, topic(Topic)}
+                       , downstream = {DownstreamClientId, topic(DownstreamTopic)}
+                       , options = Options}
+             end,
+      {ok, lists:map(MapF, UpstreamTopics)};
     Reasons ->
       {error, Reasons}
-  end;
-validate_route(_Other) ->
-  {error, [<<"unexpected pattern, expecting: "
-             "{{UpstreamClientId, UpstreamTopic | [UpstreamTopic]}, "
-             " {DownstreamClientId, DownstreamTopic}, "
-             " Options}">>]}.
+  end.
+
+ensure_no_loopback(ClientId, ClientId, UpstreamTopics, DownstreamTopic) ->
+  ensure_no_loopback(UpstreamTopics, DownstreamTopic);
+ensure_no_loopback(_UpstreamClientId, _DownstreamClientId, _UpstreamTopics, _DownstreamTopic) ->
+  ok.
 
 %% This is to ensure there is no direct loopback due to typo for example.
 %% indirect loopback would be fun for testing, so not trying to build a graph
@@ -132,22 +147,10 @@ ensure_no_loopback(UpstreamTopics, DownstreamTopic) ->
       ok
   end.
 
--spec insert_route(raw_route()) -> ok.
-insert_route({ {UpstreamClientId, UpstreamTopics0}
-             , {DownstreamClientId, DownstreamTopic0}
-             , Options0}) ->
-  UpstreamTopics = topics(UpstreamTopics0),
-  Options = case Options0 of
-              L when is_list(L) -> maps:from_list(Options0);
-              #{} = M           -> M
-            end,
-  DownstreamTopic = topic(DownstreamTopic0),
-  lists:foreach(
-    fun(UpstreamTopic) ->
-      true = ets:insert(?ETS, {{UpstreamClientId, UpstreamTopic},
-                               {DownstreamClientId, DownstreamTopic},
-                               Options})
-    end, UpstreamTopics).
+-spec insert_routes([route()]) -> ok.
+insert_routes(Routes) ->
+  true = ets:insert(?ETS, Routes),
+  ok.
 
 -spec is_configured_client_id(brod_client_id()) -> boolean().
 is_configured_client_id(ClientId) ->
@@ -190,7 +193,7 @@ validate_upstream_topic(ClientId, Topic) ->
 -spec lookup_upstream_client_ids_by_topic(topic_name()) -> [brod_client_id()].
 lookup_upstream_client_ids_by_topic(Topic) ->
   lists:foldl(
-    fun({{ClientId, Topic_}, _Downstream, _Options}, Acc) ->
+    fun(#route{upstream = {ClientId, Topic_}}, Acc) ->
       case Topic_ =:= topic(Topic) of
         true  -> [ClientId | Acc];
         false -> Acc
@@ -201,30 +204,6 @@ lookup_upstream_client_ids_by_topic(Topic) ->
 invalid_topic_name(UpOrDown_stream, NameOrList) ->
   fmt("expecting ~p topic(s) to be (a list of) atom() | string() | binary()\n"
       "got: ~p", [UpOrDown_stream, NameOrList]).
-
--spec validate_route_options(route_options()) -> [true | binary()].
-validate_route_options(Options) when is_map(Options) ->
-  validate_route_options(maps:to_list(Options));
-validate_route_options([]) -> [];
-validate_route_options([{Key, Value} | Rest]) ->
-  Result =
-    case Key of
-      repartitioning_strategy ->
-        ?IS_VALID_REPARTITIONING_STRATEGY(Value) orelse
-          fmt("unknown repartitioning strategy ~p", [Value]);
-      producer_config ->
-        is_list(Value) orelse
-          fmt("expecting producer_config to be a proplist", []);
-      consumer_config ->
-        is_list(Value) orelse
-          fmt("expecting consumer_config to be a proplist", []);
-      max_partitions_per_subscriber ->
-        (is_integer(Value) andalso Value > 0) orelse
-          fmt("max_partitions_per_subscriber should be a positive integer", []);
-      Other ->
-        fmt("unknown routing option ~p", [Other])
-    end,
-  [Result | validate_route_options(Rest)].
 
 %% @private Accept atom(), string(), or binary() as topic name,
 %% unified to binary().

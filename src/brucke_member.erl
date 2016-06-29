@@ -91,12 +91,13 @@ init(Route) ->
   self() ! {post_init, Route},
   {ok, #{}}.
 
-handle_info({post_init, {Upstream, Downstream, Options} = Route}, State) ->
-  {UpstreamClientId, UpstreamTopic} = Upstream,
-  {DownstreamClientId, DownstreamTopic} = Downstream,
+handle_info({post_init, #route{} = Route}, State) ->
+  {UpstreamClientId, UpstreamTopic} = Route#route.upstream,
+  {DownstreamClientId, DownstreamTopic} = Route#route.downstream,
   GroupConfig = [{offset_commit_policy, commit_to_kafka_v2}
                 ,{offset_commit_interval_seconds, 10}
                 ],
+  Options = Route#route.options,
   ConsumerConfig = brucke_lib:get_consumer_config(Options),
   ProducerConfig = maps:get(producer_config, Options, []),
   ok = brod:start_consumer(UpstreamClientId, UpstreamTopic, ConsumerConfig),
@@ -168,8 +169,7 @@ stop_subscribers([#subscriber{pid = Pid} | Rest]) ->
   end,
   stop_subscribers(Rest).
 
-start_subscribers(Route, Assignments) ->
-  {{_UpstreamClientId, _UpstreamTopic}, _Downstream, _Options} = Route,
+start_subscribers(#route{} = Route, Assignments) ->
   lists:map(
     fun(#brod_received_assignment{ partition    = UpstreamPartition
                                  , begin_offset = Offset
@@ -191,7 +191,7 @@ handle_ack(#{ subscribers   := Subscribers
       NewSubscriber = Subscriber#subscriber{begin_offset = Offset + 1},
       NewSubscribers = lists:keyreplace(Partition, #subscriber.partition,
                                         Subscribers, NewSubscriber),
-      {{_UpstreamClientId, UpstreamTopic}, _Downstream, _Options} = Route,
+      #route{upstream = {_UpstreamClientId, UpstreamTopic}} = Route,
       ok = brod_group_coordinator:ack(Coordinator, GenerationId, UpstreamTopic,
                                       Partition, Offset),
       State#{subscribers := NewSubscribers};

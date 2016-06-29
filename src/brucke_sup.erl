@@ -43,7 +43,10 @@ init(?ROOT_SUP) ->
 init({?GROUP_MEMBER_SUP, _Route}) ->
   post_init.
 
-post_init({?GROUP_MEMBER_SUP, {Upstream, Downstream, Options} = Route}) ->
+post_init({?GROUP_MEMBER_SUP, #route{} = Route}) ->
+  #route{ upstream = Upstream
+        , downstream = Downstream
+        , options = Options} = Route,
   case {get_partition_count(Upstream), get_partition_count(Downstream)} of
     {none, _} ->
       Msg = "upstream topic not found in kafka",
@@ -66,7 +69,7 @@ post_init({?GROUP_MEMBER_SUP, {Upstream, Downstream, Options} = Route}) ->
       end
   end.
 
-route_sup_spec({Upstream, _Downstream, _Options} = Route) ->
+route_sup_spec(#route{upstream = Upstream} = Route) ->
   { _ID       = Upstream
   , _Start    = {supervisor3, start_link, [?MODULE, {?GROUP_MEMBER_SUP, Route}]}
   , _Restart  = {transient, _DelaySeconds = 20}
@@ -75,7 +78,7 @@ route_sup_spec({Upstream, _Downstream, _Options} = Route) ->
   , _Module   = [?MODULE]
   }.
 
-route_worker_specs({_Upstream, _Downstream, Options} = Route, PartitionsCount) ->
+route_worker_specs(#route{options = Options} = Route, PartitionsCount) ->
   PartitionCountLimit = max_partitions_per_group_member(Options),
   route_worker_specs(Route, PartitionCountLimit, _Seqno = 1, PartitionsCount).
 
