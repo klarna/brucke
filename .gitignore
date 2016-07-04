@@ -22,3 +22,4 @@ rebar.lock
 *.tmp
 relx
 x86_64/
+*.coverdata

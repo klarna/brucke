@@ -1,7 +1,6 @@
 kafka_clusters:
   local_cluster:
-    - host: "localhost"
-      port: 9092
+    - localhost:9092
 brod_clients:
   - client: client_1
     cluster: local_cluster
@@ -9,19 +8,19 @@ routes:
   - upstream_client: client_1
     downstream_client: client_1
     upstream_topics:
-      - "brucke-test-topic-1"
-    downstream_topic: "brucke-test-topic-2"
+      - brucke-test-topic-1
+    downstream_topic: brucke-test-topic-2
     repartitioning_strategy: strict_p2p
-    begin_offset: earliest
+    default_begin_offset: earliest
   - upstream_client: client_1
     downstream_client: client_1
     upstream_topics:
-      - "brucke-test-topic-2"
-    downstream_topic: "brucke-test-topic-3"
+      - brucke-test-topic-2
+    downstream_topic: brucke-test-topic-3
     repartitioning_strategy: key_hash
   - upstream_client: client_1
     downstream_client: client_1
     upstream_topics:
-      - "brucke-test-topic-3"
-    downstream_topic: "brucke-test-topic-1"
+      - brucke-test-topic-3
+    downstream_topic: brucke-test-topic-1
     repartitioning_strategy: random

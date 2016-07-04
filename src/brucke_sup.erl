@@ -28,7 +28,7 @@
 -define(GROUP_MEMBER_SUP, brucke_member_sup).
 
 start_link() ->
-	supervisor3:start_link({local, ?ROOT_SUP}, ?MODULE, ?ROOT_SUP).
+  supervisor3:start_link({local, ?ROOT_SUP}, ?MODULE, ?ROOT_SUP).
 
 init(?ROOT_SUP) ->
   ok = brucke_config:init(),
@@ -39,7 +39,7 @@ init(?ROOT_SUP) ->
     end, AllClients),
   AllRoutes = brucke_config:all_routes(),
   RouteSups = [route_sup_spec(Route) || Route <- AllRoutes],
-	{ok, {{one_for_one, 0, 1}, RouteSups}};
+  {ok, {{one_for_one, 0, 1}, RouteSups}};
 init({?GROUP_MEMBER_SUP, _Route}) ->
   post_init.
 

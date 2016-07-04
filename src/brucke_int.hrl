@@ -50,6 +50,7 @@
          X =:= random)).
 
 -define(MAX_PARTITIONS_PER_GROUP_MEMBER, 12).
+-define(DEFAULT_DEFAULT_BEGIN_OFFSET, latest).
 
 -type consumer_group_id() :: binary().
 -type hostname() :: string().
@@ -68,6 +69,11 @@
                }).
 
 -type route() :: #route{}.
+-type raw_route() :: proplists:proplist().
+
+-ifndef(APPLICATION).
+-define(APPLICATION, brucke).
+-endif.
 
 -endif.
 

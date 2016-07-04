@@ -252,8 +252,7 @@ are_all_subscribers_down(#{subscribers := Subscribers}) ->
             end, Subscribers).
 
 -spec fmt_route(route()) -> iodata().
-fmt_route({Upstream, Downstream, _Options}) ->
-  io_lib:format("~p -> ~p", [Upstream, Downstream]).
+fmt_route(Route) -> brucke_lib:fmt_route(Route).
 
 %%%_* Emacs ====================================================================
 %%% Local Variables:

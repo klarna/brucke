@@ -32,12 +32,15 @@
          is_binary(N) orelse
          is_list(N) andalso N =/= [] andalso ?IS_PRINTABLE(hd(N)))).
 
+-type validation_result() :: true | binary() | [validation_result()].
+
 %%%_* APIs =====================================================================
 
--spec init([proplists:proplist()]) -> ok | no_return().
+-spec init([raw_route()]) -> ok | no_return().
 init(Routes) when is_list(Routes) ->
   ets:info(?ETS) =/= ?undef andalso exit({?ETS, already_created}),
-  ?ETS = ets:new(?ETS, [named_table, protected, set, {keypos, #route.upstream}]),
+  ?ETS = ets:new(?ETS, [named_table, protected, set,
+                        {keypos, #route.upstream}]),
   try
     ok = do_init_loop(Routes)
   catch C : E ->
@@ -72,65 +75,163 @@ all() -> ets:tab2list(?ETS).
 
 %%%_* Internal functions =======================================================
 
--spec do_init_loop([proplists:proplist()]) -> ok.
+-spec do_init_loop([raw_route()]) -> ok.
 do_init_loop([]) -> ok;
 do_init_loop([RawRoute | Rest]) ->
-  case validate_route(RawRoute) of
-    {ok, Routes} ->
-      ok = insert_routes(Routes);
-    {error, Reasons} ->
-      Rs = [[Reason, "\n"] || Reason <- Reasons],
-      ok = brucke_lib:log_skipped_route_alert(RawRoute, Rs)
+  try
+    case validate_route(RawRoute) of
+      {ok, Routes} ->
+        ok = insert_routes(Routes);
+      {error, Reasons} ->
+        Rs = [[Reason, "\n"] || Reason <- Reasons],
+        ok = brucke_lib:log_skipped_route_alert(RawRoute, Rs)
+    end
+  catch throw : Reason ->
+      ReasonTxt = io_lib:format("~p", [Reason]),
+      ok = brucke_lib:log_skipped_route_alert(RawRoute, ReasonTxt)
   end,
   do_init_loop(Rest).
 
--spec validate_route(proplists:proplist()) -> {ok, [route()]} | {error, [binary()]}.
-validate_route(Route) ->
-  {_, UpstreamClientId} = lists:keyfind(upstream_client, 1, Route),
-  {_, DownstreamClientId} = lists:keyfind(downstream_client, 1, Route),
-  {_, UpstreamTopics} = lists:keyfind(upstream_topics, 1, Route),
-  {_, DownstreamTopic} = lists:keyfind(downstream_topic, 1, Route),
-  RepartitioningStrategy = proplists:get_value(repartitioning_strategy,
-                                               Route, ?DEFAULT_REPARTITIONING_STRATEGY),
-  ProducerConfig = proplists:get_value(producer_config, Route, []),
-  ConsumerConfig = proplists:get_value(consumer_config, Route, []),
-  MaxPartitionsPerGroupMember = proplists:get_value(max_partitions_per_group_member,
-                                                    Route, ?MAX_PARTITIONS_PER_GROUP_MEMBER),
-  ValidationResults0 =
-    [ is_configured_client_id(UpstreamClientId) orelse
-        <<"unknown upstream client id">>
-    , is_configured_client_id(DownstreamClientId) orelse
-        <<"unknown downstream client id">>
-    , ?IS_VALID_TOPIC_NAME(DownstreamTopic) orelse
-        invalid_topic_name(downstream, DownstreamTopic)
-    , validate_upstream_topics(UpstreamClientId, UpstreamTopics)
-    , ?IS_VALID_REPARTITIONING_STRATEGY(RepartitioningStrategy) orelse
-          fmt("unknown repartitioning strategy ~p", [RepartitioningStrategy])
-    , (is_integer(MaxPartitionsPerGroupMember) andalso MaxPartitionsPerGroupMember > 0) orelse
-          fmt("max_partitions_per_group_member should be a positive integer", [])
-    ],
-  ValidationResults = lists:flatten(ValidationResults0),
-  case [Result || Result <- ValidationResults, Result =/= true] of
-    [] ->
-      ok = ensure_no_loopback(UpstreamClientId, DownstreamClientId, UpstreamTopics, DownstreamTopic),
-      Options = #{ repartitioning_strategy => RepartitioningStrategy
-                 , producer_config => ProducerConfig
-                 , consumer_config => ConsumerConfig
-                 , max_partitions_per_group_member => MaxPartitionsPerGroupMember},
-      MapF = fun(Topic) ->
-                 #route{ upstream = {UpstreamClientId, topic(Topic)}
-                       , downstream = {DownstreamClientId, topic(DownstreamTopic)}
-                       , options = Options}
-             end,
-      {ok, lists:map(MapF, UpstreamTopics)};
-    Reasons ->
+-spec validate_route(raw_route()) ->
+                {ok, [route()]} | {error, validation_result()} | no_return().
+validate_route(RawRoute0) ->
+  %% use maps to ensure
+  %% 1. key-value list
+  %% 2. later value should overwrite earlier in case of key duplication
+  RawRouteMap =
+    try
+      maps:from_list(RawRoute0)
+    catch error : badarg ->
+        throw(bad_route)
+    end,
+  RawRoute = maps:to_list(RawRouteMap),
+  case apply_route_schema(RawRoute, schema(), defaults(), #{}, []) of
+    {ok, #{ upstream_client   := UpstreamClient
+          , downstream_client := DownstreamClient
+          , upstream_topics   := UpstreamTopics
+          , downstream_topic  := DownstreamTopic
+          } = RouteAsMap} ->
+      case UpstreamClient =:= DownstreamClient of
+        true  -> ok = ensure_no_loopback(UpstreamTopics, DownstreamTopic);
+        false -> ok
+      end,
+      convert_to_route_record(RouteAsMap);
+    {error, Reasons} ->
       {error, Reasons}
   end.
 
-ensure_no_loopback(ClientId, ClientId, UpstreamTopics, DownstreamTopic) ->
-  ensure_no_loopback(UpstreamTopics, DownstreamTopic);
-ensure_no_loopback(_UpstreamClientId, _DownstreamClientId, _UpstreamTopics, _DownstreamTopic) ->
-  ok.
+convert_to_route_record(Route) ->
+  #{ upstream_client := UpstreamClientId
+   , upstream_topics := UpstreamTopics
+   , downstream_client := DownstreamClientId
+   , downstream_topic := DownstreamTopic
+   , repartitioning_strategy := RepartitioningStrategy
+   , max_partitions_per_group_member := MaxPartitionsPerGroupMember
+   , default_begin_offset := BeginOffset
+   } = Route,
+  ConsumerConfig = [{begin_offset, BeginOffset}],
+  Options =
+    #{ repartitioning_strategy => RepartitioningStrategy
+     , max_partitions_per_group_member => MaxPartitionsPerGroupMember
+     , producer_config => [] %% TODO: populate from route options
+     , consumer_config => ConsumerConfig
+     },
+  %% flatten out the upstream topics
+  %% to cimplify the config as if it's all
+  %% one upstream topic to one downstream topic mapping
+  MapF =
+    fun(Topic) ->
+        #route{ upstream = {UpstreamClientId, topic(Topic)}
+              , downstream = {DownstreamClientId, topic(DownstreamTopic)}
+              , options = Options}
+    end,
+  {ok, lists:map(MapF, topics(UpstreamTopics))}.
+
+defaults() ->
+  #{ repartitioning_strategy         => ?DEFAULT_REPARTITIONING_STRATEGY
+   , max_partitions_per_group_member => ?MAX_PARTITIONS_PER_GROUP_MEMBER
+   , default_begin_offset            => ?DEFAULT_DEFAULT_BEGIN_OFFSET
+   }.
+
+schema() ->
+  #{ upstream_client =>
+       fun(_, Id) ->
+           is_configured_client_id(Id) orelse
+             <<"unknown upstream client id">>
+       end
+   , downstream_client =>
+       fun(_, Id) ->
+           is_configured_client_id(Id) orelse
+             <<"unknown downstream client id">>
+       end
+   , downstream_topic =>
+       fun(_, Topic) ->
+           ?IS_VALID_TOPIC_NAME(Topic) orelse
+             invalid_topic_name(downstream, Topic)
+       end
+   , upstream_topics =>
+       fun(#{upstream_client := UpstreamClientId}, Topic) ->
+           validate_upstream_topics(UpstreamClientId, Topic)
+       end
+   , repartitioning_strategy =>
+       fun(_, S) ->
+           ?IS_VALID_REPARTITIONING_STRATEGY(S) orelse
+             fmt("unknown repartitioning strategy ~p", [S])
+       end
+   , max_partitions_per_group_member =>
+       fun(_, M) ->
+           (is_integer(M) andalso M > 0) orelse
+             fmt("max_partitions_per_group_member "
+                 "should be a positive integer\nGto~p", [M])
+       end
+   , default_begin_offset =>
+       fun(_, B) ->
+           (B =:= latest orelse B =:= earliest) orelse
+             fmt("default_begin_offset should be either "
+                 "'latest' or 'earliest'\nGot~p", [B])
+       end
+   }.
+ 
+-spec apply_route_schema(raw_route(), #{}, #{}, #{}, validation_result()) ->
+                            {ok, #{}} | {error, validation_result()} |
+                            no_return().
+apply_route_schema([], Schema, Defaults, Result, Errors0) ->
+  Errors1 =
+    case maps:to_list(maps:without(maps:keys(Defaults), Schema)) of
+      [] ->
+        Errors0;
+      Missing ->
+        MissingAttrs = [K || {K, _V} <- Missing],
+        [fmt("missing mandatory attributes ~p", [MissingAttrs]) | Errors0]
+    end,
+  Errors = [E || E <- lists:flatten(Errors1), E =/= true],
+  case [] =:= Errors of
+    true ->
+      %% merge (overwrite) parsed values to defaults
+      {ok, maps:merge(Defaults, Result)};
+    false ->
+      {error, Errors}
+  end;
+apply_route_schema([{K, V} | Rest], Schema, Defaults, Result, Errors) ->
+  case maps:find(K, Schema) of
+    {ok, Fun} ->
+      NewSchema = maps:remove(K, Schema),
+      NewResult = Result#{K => V},
+      case Fun(NewResult, V) of
+        true ->
+          apply_route_schema(Rest, NewSchema, Defaults, NewResult, Errors);
+        Error ->
+          NewErrors = [Error | Errors],
+          apply_route_schema(Rest, NewSchema, Defaults, NewResult, NewErrors)
+      end;
+    error ->
+      Error =
+        case is_atom(K) of
+          true  -> fmt("unknown attribute ~p", [K]);
+          false -> fmt("unknown attribute ~p, expecting atom", [K])
+        end,
+      apply_route_schema(Rest, Schema, Defaults, Result, [Error | Errors])
+  end.
 
 %% This is to ensure there is no direct loopback due to typo for example.
 %% indirect loopback would be fun for testing, so not trying to build a graph
@@ -138,13 +239,11 @@ ensure_no_loopback(_UpstreamClientId, _DownstreamClientId, _UpstreamTopics, _Dow
 %% {downstream, topic_2} -> {upstream, topic_1}
 %% you get a perfect data generator for load testing.
 -spec ensure_no_loopback(topic_name() | [topic_name()], topic_name()) ->
-        ok | {error, binary()}.
+        ok | no_return().
 ensure_no_loopback(UpstreamTopics, DownstreamTopic) ->
   case lists:member(topic(DownstreamTopic), topics(UpstreamTopics)) of
-    true ->
-      {error, [<<"direct loopback from upstream topic to downstream topic">>]};
-    false ->
-      ok
+    true  -> throw(direct_loopback);
+    false -> ok
   end.
 
 -spec insert_routes([route()]) -> ok.
@@ -157,7 +256,8 @@ is_configured_client_id(ClientId) ->
   brucke_config:is_configured_client_id(ClientId).
 
 -spec validate_upstream_topics(brod_client_id(),
-                               topic_name() | [topic_name()]) -> [binary()].
+                               topic_name() | [topic_name()]) ->
+                                  validation_result().
 validate_upstream_topics(_ClientId, []) ->
   invalid_topic_name(upstream, []);
 validate_upstream_topics(ClientId, Topic) when ?IS_VALID_TOPIC_NAME(Topic) ->
@@ -171,7 +271,7 @@ validate_upstream_topics(ClientId, Topics0) when is_list(Topics0) ->
   end.
 
 -spec validate_upstream_topic(brod_client_id(), topic_name()) ->
-        [true | binary()].
+        [true | validation_result()].
 validate_upstream_topic(ClientId, Topic) ->
   ClientIds = lookup_upstream_client_ids_by_topic(Topic),
   ClusterName = brucke_config:get_cluster_name(ClientId),
@@ -200,7 +300,7 @@ lookup_upstream_client_ids_by_topic(Topic) ->
       end
     end, [], all()).
 
--spec invalid_topic_name(upstream | downstream, any()) -> binary().
+-spec invalid_topic_name(upstream | downstream, any()) -> validation_result().
 invalid_topic_name(UpOrDown_stream, NameOrList) ->
   fmt("expecting ~p topic(s) to be (a list of) atom() | string() | binary()\n"
       "got: ~p", [UpOrDown_stream, NameOrList]).
@@ -240,56 +340,102 @@ no_ets_leak_test() ->
 
 client_not_configured_test() ->
   clean_setup(false),
-  Route1 = {{client_2, topic_1}, {client_2, topic_2}, []},
-  ok = init([Route1]),
+  R0 = 
+    [ {upstream_client, client_2}
+    , {upstream_topics, topic_1}
+    , {downstream_client, client_3}
+    , {downstream_topic, topic_2}
+    ],
+  ok = init([R0]),
   ?assertEqual([], all()),
   ok = destroy().
 
 bad_topic_name_test() ->
   clean_setup(),
-  Route1 = {{client_1, topic_1}, {client_1, [topic_1]}, []},
-  Route2 = {{client_1, [topic_1]}, {client_1, ["topic_x"]}, []},
-  Route3 = {{client_1, []}, {client_1, topic_1}, []},
-  Route4 = {{client_1, [[]]}, {client_1, topic_1}, []},
+  Base = 
+    [ {upstream_client, client_1}
+    , {downstream_client, client_1}
+    ],
+  Route1 = [{upstream_topics, [topic_1]}, {downstream_topic, []} | Base],
+  Route2 = [{upstream_topics, topic_1}, {downstream_topic, ["topic_x"]} | Base],
+  Route3 = [{upstream_topics, []}, {downstream_topic, []} | Base],
+  Route4 = [{upstream_topics, [[]]}, {downstream_topic, []} | Base],
   ok = init([Route1, Route2, Route3, Route4]),
   ?assertEqual([], all()),
   ok = destroy().
 
 bad_routing_options_test() ->
   clean_setup(),
-  Routes = [ {{client_1, topic_1}, {client_1, topic_2}, #{a => b}}
-           , {{client_1, topic_1}, {client_1, topic_2},
-              [{repartitioning_strategy, x}]}
-           , {{client_1, topic_1}, {client_1, topic_2}, [{producer_config, x}]}
-           , {{client_1, topic_1}, {client_1, topic_2}, [{consumer_config, x}]}
-           , {{client_1, topic_1}, {client_1, topic_2},
-              [{max_partitions_per_subscriber, x}]}
+  R0 = 
+    [ {upstream_client, client_1}
+    , {upstream_topics, topic_1}
+    , {downstream_client, client_1}
+    , {downstream_topic, topic_2}
+    ],
+  Routes = [ [{default_begin_offset, x} | R0]
+           , [{repartitioning_strategy, x} | R0]
+           , [{max_partitions_per_group_member, x} | R0]
+           , [{"unknown_string", x} | R0]
+           , [{unknown, x} | R0]
            ],
   ok = init(Routes),
   ?assertEqual([], all()),
   ok = destroy().
 
+mandatory_attribute_missing_test() ->
+  clean_setup(),
+  R = [ {upstream_client, client_1}
+      , {upstream_topics, topic_1}
+      , {downstream_client, client_1}
+      ],
+  ok = init([R]),
+  ?assertEqual([], all()),
+  ok = destroy().
+ 
 duplicated_source_test() ->
   clean_setup(),
-  ValidRoute = {{client_1, [<<"topic_1">>, "topic_2"]},
-                {client_1, <<"topic_3">>}, #{}},
-  Routes = [ValidRoute
-           ,{{client_1, topic_1}, {client_1, topic_3}, []}],
-  ok = init(Routes),
-  ?assertEqual([ {{client_1, <<"topic_1">>}, {client_1, <<"topic_3">>}, #{}}
-               , {{client_1, <<"topic_2">>}, {client_1, <<"topic_3">>}, #{}}
+  ValidRoute1 = [ {upstream_client, client_1}
+                , {upstream_topics, [<<"topic_1">>, "topic_2"]}
+                , {downstream_client, client_1}
+                , {downstream_topic, <<"topic_3">>}
+                ],
+  ValidRoute2 = [ {upstream_client, client_1}
+                , {upstream_topics, <<"topic_4">>}
+                , {downstream_client, client_1}
+                , {downstream_topic, <<"topic_3">>}
+                ],
+  DupeRoute = [ {upstream_client, client_1}
+              , {upstream_topics, topic_1}
+              , {downstream_client, client_1}
+              , {downstream_topic, <<"topic_3">>}
+              ],
+  ok = init([ValidRoute1, ValidRoute2, DupeRoute]),
+  ?assertMatch([ #route{upstream = {client_1, <<"topic_1">>}}
+               , #route{upstream = {client_1, <<"topic_2">>}}
+               , #route{upstream = {client_1, <<"topic_4">>}}
                ], all_sorted()),
-  ?assertEqual({{client_1, <<"topic_1">>}, {client_1, <<"topic_3">>}, #{}},
+  ?assertMatch(#route{upstream = {client_1, <<"topic_1">>}},
                lookup(client_1, <<"topic_1">>)),
+  ?assertEqual(false, lookup(client_1, <<"unknown_topic">>)),
   ok = destroy().
 
 direct_loopback_test() ->
   clean_setup(),
-  Routes = [ {{client_1, topic_1}, {client_1, topic_1}, []}
-           , {{client_1, topic_1}, {client_2, topic_2}, []}
+  Routes = [ [ {upstream_client, client_1}
+             , {upstream_topics, topic_1}
+             , {downstream_client, client_1}
+             , {downstream_topic, topic_1}
+             ]
+           , [ {upstream_client, client_1}
+             , {upstream_topics, topic_1}
+             , {downstream_client, client_2}
+             , {downstream_topic, topic_2}
+             ]
            ],
   ok = init(Routes),
-  ?assertEqual([{{client_1, <<"topic_1">>}, {client_2, <<"topic_2">>}, #{}}],
+  ?assertMatch([#route{ upstream = {client_1, <<"topic_1">>}
+                      , downstream = {client_2, <<"topic_2">>}
+                      , options = #{}}],
                all()),
   ok = destroy().
 
@@ -310,7 +456,10 @@ clean_setup(IsConfiguredClientId) ->
   meck:expect(brucke_config, get_cluster_name, 1, <<"group-id">>),
   ok.
 
-all_sorted() -> lists:keysort(1, all()).
+all_sorted() -> lists:keysort(#route.upstream, all()).
+
+topics_test() ->
+  ?assertEqual([<<"topic_1">>], topics(topic_1)).
 
 -endif.
 
