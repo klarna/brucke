@@ -19,15 +19,25 @@
 -export([ log_skipped_route_alert/2
         , get_consumer_config/1
         , get_repartitioning_strategy/1
+        , fmt_route/1
         ]).
 
 -include("brucke_int.hrl").
 
 %%%_* APIs =====================================================================
 
--spec log_skipped_route_alert(route(), iodata()) -> ok.
+-spec fmt_route(route()) -> iodata().
+fmt_route(#route{upstream = Upstream, downstream = Downstream}) ->
+  io_lib:format("~p -> ~p", [Upstream, Downstream]).
+
+-spec log_skipped_route_alert(route() | raw_route(), iodata()) -> ok.
+log_skipped_route_alert(#route{} = Route, Reasons) ->
+  lager:alert("KSIPPING bad route: ~s\nREASON(s):~s",
+              [fmt_route(Route), Reasons]),
+  ok;
 log_skipped_route_alert(Route, Reasons) ->
-  lager:alert("SKIPPING bad route: ~10000p\nREASON(s):~s", [Route, Reasons]),
+  lager:alert("SKIPPING bad route: ~p\nREASON(s):~s",
+              [Route, Reasons]),
   ok.
 
 -spec get_repartitioning_strategy(route_options()) -> repartitioning_strategy().

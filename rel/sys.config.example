@@ -16,7 +16,7 @@
    , {error_logger_hwm, 500}
    ]}
 , { brucke
-  , [ {config_file, {priv, "brucke.config"}} %% or abs path
+  , [ {config_file, {priv, "brucke.yml"}} %% or abs path
     ]
   }
 ].

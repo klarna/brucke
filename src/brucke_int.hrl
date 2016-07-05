@@ -50,6 +50,7 @@
          X =:= random)).
 
 -define(MAX_PARTITIONS_PER_GROUP_MEMBER, 12).
+-define(DEFAULT_DEFAULT_BEGIN_OFFSET, latest).
 
 -type consumer_group_id() :: binary().
 -type hostname() :: string().
@@ -62,30 +63,17 @@
                        | #{route_option_key() => term()}.
 -type topic_name() :: atom() | string() | binary().
 
+-record(route, { upstream   :: {brod_client_id(), kafka_topic()}
+               , downstream :: {brod_client_id(), kafka_topic()}
+               , options    :: route_options()
+               }).
 
-%% brucke route input is a eterm of below spec:
-%% [{ {UpstreamGroupName :: atom(), [UpstreamTopic :: topic_name()]},
-%%  , {DownstreamClientName :: atom(), DownstreamTopic :: topic_name()}
-%%  , #{ repartitioning_strategy => repartitioning_strategy()
-%%     , producer_config => [...] %% see brod for details
-%%     , consumer_config => [...] %% see brod for details
-%%       %% maximum number of partitions a subscriber can subscribe to
-%%     , max_partitions_per_subscriber => 60
-%%     }
-%%  }]
-%% The route entries are converted into an ets table which acts as a routing
-%% cache. i.e. When a message is received from upstream topic, do a lookup
-%% in the routing table, then send it to the downstream producer.
--type raw_route() :: { Upstream   :: {brod_client_id(), topic_name()
-                                   | [topic_name()]}
-                     , Downstream :: {brod_client_id(), topic_name()}
-                     , Options    :: route_options()
-                     }.
+-type route() :: #route{}.
+-type raw_route() :: proplists:proplist().
 
--type route() :: { Upstream   :: {brod_client_id(), kafka_topic()}
-                 , Downstream :: {brod_client_id(), kafka_topic()}
-                 , Options    :: route_options()
-                 }.
+-ifndef(APPLICATION).
+-define(APPLICATION, brucke).
+-endif.
 
 -endif.
 

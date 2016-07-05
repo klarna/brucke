@@ -14,16 +14,31 @@
 %%%   limitations under the License.
 %%%
 
-%% A brucke config file is a Erlang term file consist of 3 sections
-%% 1. kafka clusters
-%%    e.g. [{"kafka-cluster-1", [{"localhost", 9092}]}].
-%% 2. brod clients
-%%    e.g. [{brod_client_1, "kafka-cluster-1", _ClientConfig = [...]}].
-%% 3. brucke routes
-%%    e.g. [{{_Upstream = {brod_client_1, topic_1},
-%%           {_Downstream = {brod_client_2, topic_2}},
-%%           _Options = []
-%%         ].
+%% A brucke config file is a YAML file.
+%% Cluster names and client names must comply to erlang atom syntax.
+%%
+%% kafka_clusters:
+%%   kafka_cluster_1:
+%%     - host: "localhost"
+%%       port: 9092
+%%   kafka_cluster_2:
+%%     - host: "kafka-1"
+%%       port: 9092
+%%     - host: "kafka-2"
+%%       port: 9092
+%% brod_clients:
+%%   - client: brod_client_1
+%%     cluster: kafka_cluster_1
+%%     config: [] # optional
+%% routes:
+%%   - upstream_client: brod_client_1
+%%     downstream_client: brod_client_1
+%%     upstream_topics:
+%%       - "topic_1"
+%%     downstream_topic: "topic_2"
+%%     repartitioning_strategy: strict_p2p
+%%     default_begin_offset: earliest # optional
+%%
 -module(brucke_config).
 
 -export([ init/0
@@ -38,21 +53,27 @@
 
 -define(CONFIG_FILE_ENV_VAR_NAME, "BRUCKE_CONFIG_FILE").
 
--type raw_client() :: {brod_client_id(), cluster_name(), brod_client_config()}.
 -define(ETS, ?MODULE).
+
+-type config_tag() :: atom() | string() | binary().
+-type config_value() :: atom() | string() | integer().
+-type config_entry() :: {config_tag(), config_value() | config()}.
+-type config() :: [config_entry()].
 
 %%%_* APIs =====================================================================
 
 -spec init() -> ok | no_return().
 init() ->
   File = get_file_path_from_config(),
-  case file:consult(File) of
-    {ok, Configs} ->
-      init(File, Configs);
-    {error, Reason} ->
-      lager:emergency("failed to load brucke config file ~s, reason:~p",
-                      [File, Reason]),
-      exit({bad_erlang_term_file, File})
+  yamerl_app:set_param(node_mods, [yamerl_node_erlang_atom]),
+  try
+    [Configs] = yamerl_constr:file(File, [{erlang_atom_autodetection, true}]),
+    do_init(Configs)
+  catch C : E ->
+      
+      lager:emergency("failed to load brucke config file ~s: ~p:~p\n~p",
+                      [File, C, E, erlang:get_stacktrace()]),
+      exit({bad_brucke_config, File})
   end.
 
 -spec is_configured_client_id(brod_client_id()) -> boolean().
@@ -122,9 +143,27 @@ assert_file(Path) ->
       exit({bad_brucke_config_file, Path})
   end.
 
--spec init(filename(), [term()]) -> ok | no_return().
-init(_File, [Clusters, Clients, Routes]) ->
-  ets:info(?ETS) =/= ?undef andalso exit({?ETS, already_created}),
+-spec do_init([config()]) -> ok | no_return().
+do_init(Configs) ->
+  Kf = fun(K) ->
+         case lists:keyfind(K, 1, Configs) of
+           {K, V} ->
+             V;
+           false ->
+             lager:emergency("kafka_cluster is not found in config"),
+             exit({mandatory_config_entry_not_found, K})
+         end
+       end,
+  Clusters = Kf(kafka_clusters),
+  Clients = Kf(brod_clients),
+  Routes = Kf(routes),
+  case ets:info(?ETS) of
+    ?undef ->
+      ok;
+    _ ->
+      lager:emergency("config already loaded"),
+      exit({?ETS, already_created})
+  end,
   ?ETS = ets:new(?ETS, [named_table, protected, set]),
   try
     init(Clusters, Clients, Routes)
@@ -135,14 +174,7 @@ init(_File, [Clusters, Clients, Routes]) ->
     error : Reason ->
       ok = destroy(),
       erlang:exit({error, Reason, erlang:get_stacktrace()})
-  end;
-init(File, L) ->
-  lager:emergency("Expecting 3 sections in brucke config\n"
-                  "1. Kafka Clusters\n"
-                  "2. Brod Clients\n"
-                  "3. Brucke Routes\n"
-                  "seems ~s has ~p sections", [File, length(L)]),
-  exit(bad_brucke_config_file).
+  end.
 
 -spec destroy() -> ok.
 destroy() ->
@@ -159,7 +191,7 @@ lookup(Key) ->
     [R] -> R
   end.
 
--spec init([cluster()], [raw_client()], [raw_route()]) -> ok | no_return().
+-spec init(config(), config(), config()) -> ok | no_return().
 init(Clusters, _, _) when not is_list(Clusters) orelse Clusters == [] ->
   lager:emergency("Expecting list of kafka clusters "
                   "Got ~P\n", [Clusters, 9]),
@@ -179,12 +211,9 @@ init(Clusters, Clients, Routes) ->
       case lookup(ClusterName) of
         false ->
           ok;
-        {ClusterName, Endpoints0} ->
-          lager:alert("Duplicated cluster name\n"
-                      "overwritting endpoints: ~p\n"
-                      "        with endpoints: ~p\n",
-                      [Endpoints0, Endpoints]
-                      )
+        {ClusterName, _} ->
+          lager:emergency("Duplicated cluster name ~p", [ClusterName]),
+          exit({duplicated_cluster_name, ClusterName})
       end,
       ets:insert(?ETS, {ClusterName, Endpoints})
     end, Clusters),
@@ -213,19 +242,23 @@ validate_cluster({ClusterId, [_|_] = Endpoints}) ->
   {ensure_binary(ClusterId),
    [validate_endpoint(Endpoint) || Endpoint <- Endpoints]};
 validate_cluster(Other) ->
-  lager:emergency("Expecing cluster config of pattern {ClusterId, Endpoints}\n"
-                  "Got: ~P", [Other, 9]),
-  exit(bad_cluster_config).
+  lager:emergency("Expecing cluster config with cluster id "
+                  "and a list of hostname:port endpoints"),
+  exit({bad_cluster_config, Other}).
 
-validate_client({ClientId, ClusterName, Config}) when is_list(Config) ->
-  {ensure_atom(ClientId),
-   ensure_binary(ClusterName),
-   Config};
-validate_client(Other) ->
-  lager:emergency("Expecing client config of pattern "
-                  "{ClientId::atom(), ClusterName::string(), ClientConfig::list()}\n"
-                  "Got: ~P", [Other, 9]),
-  exit(bad_client_config).
+validate_client(Client) ->
+  try
+    {_, ClientId} = lists:keyfind(client, 1, Client),
+    {_, ClusterName} = lists:keyfind(cluster, 1, Client),
+    Config = proplists:get_value(config, Client, []),
+    {ensure_atom(ClientId),
+     ensure_binary(ClusterName),
+     Config}
+  catch C:E ->
+      lager:emergency("Bad brod client config: ~P.\n~p:~p\n~p",
+                      [Client, 9, C, E, erlang:get_stacktrace()]),
+      exit(bad_client_config)
+  end.
 
 ensure_atom(A) when is_atom(A) -> A.
 
@@ -236,25 +269,25 @@ ensure_binary(L) when is_list(L) ->
 ensure_binary(B) when is_binary(B) ->
   B.
 
-validate_endpoint({Host, Port}) ->
-  {ensure_string(Host),
-   ensure_protnum(Port)};
+validate_endpoint(HostPort) when is_list(HostPort) ->
+  case string:tokens(HostPort, ":") of
+    [Host, Port] ->
+      try
+        {Host, list_to_integer(Port)}
+      catch
+        _ : _ ->
+          exit_on_bad_endpoint(HostPort)
+      end;
+    _Other ->
+      exit_on_bad_endpoint(HostPort)
+  end;
 validate_endpoint(Other) ->
-  lager:emergency("Expecting endpoints of patern {Host, Port}\n"
-                  "Got ~P", [Other, 9]),
-  exit({bad_endpoint}).
+  exit_on_bad_endpoint(Other).
 
-ensure_string(A) when is_atom(A) -> atom_to_list(A);
-ensure_string(B) when is_binary(B) -> binary_to_list(B);
-ensure_string(L) when is_list(L)   -> L;
-ensure_string(Other) ->
-  lager:emergency("Unexpected string: ~P", [Other, 9]),
-  exit({bad_string, Other}).
-
-ensure_protnum(I) when is_integer(I) -> I;
-ensure_protnum(X) ->
-  lager:emergency("Unexpected port number ~P", [X, 9]),
-  exit({bad_port_number, X}).
+exit_on_bad_endpoint(Bad) ->
+  lager:emergency("Expecting endpoints string of patern Host:Port\n"
+                  "Got ~P", [Bad, 9]),
+  exit({bad_endpoint, Bad}).
 
 %%%_* Emacs ====================================================================
 %%% Local Variables:

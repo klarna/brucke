@@ -28,7 +28,7 @@
 -define(GROUP_MEMBER_SUP, brucke_member_sup).
 
 start_link() ->
-	supervisor3:start_link({local, ?ROOT_SUP}, ?MODULE, ?ROOT_SUP).
+  supervisor3:start_link({local, ?ROOT_SUP}, ?MODULE, ?ROOT_SUP).
 
 init(?ROOT_SUP) ->
   ok = brucke_config:init(),
@@ -39,11 +39,14 @@ init(?ROOT_SUP) ->
     end, AllClients),
   AllRoutes = brucke_config:all_routes(),
   RouteSups = [route_sup_spec(Route) || Route <- AllRoutes],
-	{ok, {{one_for_one, 0, 1}, RouteSups}};
+  {ok, {{one_for_one, 0, 1}, RouteSups}};
 init({?GROUP_MEMBER_SUP, _Route}) ->
   post_init.
 
-post_init({?GROUP_MEMBER_SUP, {Upstream, Downstream, Options} = Route}) ->
+post_init({?GROUP_MEMBER_SUP, #route{} = Route}) ->
+  #route{ upstream = Upstream
+        , downstream = Downstream
+        , options = Options} = Route,
   case {get_partition_count(Upstream), get_partition_count(Downstream)} of
     {none, _} ->
       Msg = "upstream topic not found in kafka",
@@ -66,7 +69,7 @@ post_init({?GROUP_MEMBER_SUP, {Upstream, Downstream, Options} = Route}) ->
       end
   end.
 
-route_sup_spec({Upstream, _Downstream, _Options} = Route) ->
+route_sup_spec(#route{upstream = Upstream} = Route) ->
   { _ID       = Upstream
   , _Start    = {supervisor3, start_link, [?MODULE, {?GROUP_MEMBER_SUP, Route}]}
   , _Restart  = {transient, _DelaySeconds = 20}
@@ -75,7 +78,7 @@ route_sup_spec({Upstream, _Downstream, _Options} = Route) ->
   , _Module   = [?MODULE]
   }.
 
-route_worker_specs({_Upstream, _Downstream, Options} = Route, PartitionsCount) ->
+route_worker_specs(#route{options = Options} = Route, PartitionsCount) ->
   PartitionCountLimit = max_partitions_per_group_member(Options),
   route_worker_specs(Route, PartitionCountLimit, _Seqno = 1, PartitionsCount).
 
