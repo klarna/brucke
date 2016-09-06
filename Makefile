@@ -4,7 +4,7 @@ PROJECT_VERSION = $(shell cat VSN)
 
 DEPS = lager brod yamler
 
-dep_brod_commit = 2.1.9
+dep_brod_commit = 2.2-dev
 dep_yamler = git https://github.com/yakaz/yamerl.git
 dep_yamerl_commit = v0.3.2-1
 

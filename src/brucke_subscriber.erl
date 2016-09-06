@@ -27,7 +27,9 @@
 -type partition() :: kafka_partition().
 -type offset() :: kafka_offset().
 -type state() :: #{}.
--type pending_acks() :: #{pid() => [{reference(), offset()}]}.
+-define(UNACKED(CallRef, Offset), {CallRef, Offset, unacked}).
+-define(ACKED(CallRef, Offset) ,{CallRef, Offset, acked}).
+-type pending_acks() :: [{brod_call_ref(), offset(), unacked | acked}].
 
 -define(SUBSCRIBE_RETRY_LIMIT, 3).
 -define(SUBSCRIBE_RETRY_SECONDS, 2).
@@ -41,7 +43,7 @@ start_link(Route, UpstreamPartition, BeginOffset) ->
            , upstream_partition => UpstreamPartition
            , parent             => Parent
            , consumer           => subscribing
-           , pending_acks       => #{}
+           , pending_acks       => []
            },
   Pid = proc_lib:spawn_link(fun() -> loop(State) end),
   Pid ! {subscribe, BeginOffset, 0},
@@ -102,32 +104,55 @@ subscribe(State, _BeginOffset, _UnknownRef) ->
   State.
 
 -spec handle_message_set(state(), pid(), #kafka_message_set{}) -> state().
-handle_message_set(#{ route        := Route
-                    , pending_acks := PendingAcks
-                    } = State, Pid, MsgSet) ->
-  #kafka_message_set{ topic          = Topic
-                    , partition      = Partition
-                    , messages       = Messages
-                    , high_wm_offset = _HW
-                    } = MsgSet,
+handle_message_set(#{route := Route} = State, Pid, MsgSet) ->
+  #route{options = Options} = Route,
   #{consumer := Pid} = State, %% assert
+  RepartStrategy = brucke_lib:get_repartitioning_strategy(Options),
+  do_handle_message_set(State, MsgSet, RepartStrategy).
+
+do_handle_message_set(#{ route        := Route
+                       , pending_acks := PendingAcks
+                       } = State, MsgSet, strict_p2p) ->
+  #kafka_message_set{ topic     = Topic
+                    , partition = Partition
+                    , messages  = Messages
+                    } = MsgSet,
   #route{ upstream = {_UpstreamClientId, Topic}
         , downstream = {DownstreamClientId, DownstreamTopic}
-        , options = Options} = Route,
+        } = Route,
+  %% lists:last/1 is safe here because brod never sends empty message set
+  #kafka_message{offset = LastOffset} = lists:last(Messages),
+  KafkaKvList =
+    lists:map(
+      fun(#kafka_message{key = Key, value = Value}) ->
+        {ensure_binary(Key), ensure_binary(Value)}
+      end, Messages),
+  {ok, CallRef} = brod:produce(DownstreamClientId, DownstreamTopic,
+                               Partition, KafkaKvList),
+  State#{pending_acks := PendingAcks ++ [?UNACKED(CallRef, LastOffset)]};
+do_handle_message_set(#{ route        := Route
+                       , pending_acks := PendingAcks
+                       } = State, MsgSet, RepartStrategy) ->
+  #kafka_message_set{ topic    = Topic
+                    , messages = Messages
+                    } = MsgSet,
+  #route{ upstream = {_UpstreamClientId, Topic}
+        , downstream = {DownstreamClientId, DownstreamTopic}
+        } = Route,
   NewPendingAcks =
     lists:map(
       fun(#kafka_message{ offset = Offset
                         , key    = Key
                         , value  = Value
                         }) ->
-        DownstreamPartition = maybe_repartition(Partition, Options),
+        PartitionFun = repartition_fun(RepartStrategy),
         {ok, CallRef} = brod:produce(DownstreamClientId, DownstreamTopic,
-                                     DownstreamPartition,
+                                     PartitionFun,
                                      ensure_binary(Key),
                                      ensure_binary(Value)),
-        {CallRef, Offset}
+        ?UNACKED(CallRef, Offset)
       end, Messages),
-  State#{pending_acks := append_pending_acks(PendingAcks, NewPendingAcks)}.
+  State#{pending_acks := PendingAcks ++ NewPendingAcks}.
 
 ensure_binary(undefined)           -> <<>>;
 ensure_binary(B) when is_binary(B) -> B.
@@ -139,23 +164,40 @@ handle_produce_reply(#{ pending_acks       := PendingAcks
                       , consumer           := ConsumerPid
                       , route              := Route
                       } = State, Reply) ->
-  #brod_produce_reply{ call_ref = ReceivedRef
+  #brod_produce_reply{ call_ref = CallRef
                      , result   = brod_produce_req_acked %% assert
                      } = Reply,
-  case take_pending_ack(PendingAcks, ReceivedRef) of
-    {ExpectedRef, Offset, Rest} when ExpectedRef =:= ReceivedRef ->
+  Offset =
+    case lists:keyfind(CallRef, 1, PendingAcks) of
+      ?UNACKED(CallRef, Offset_) ->
+        Offset_;
+      _ ->
+        erlang:exit({unexpected_produce_reply, Route, UpstreamPartition,
+                     PendingAcks, CallRef})
+    end,
+  PendingAcks1 =
+    lists:keyreplace(CallRef, 1, PendingAcks, ?ACKED(CallRef, Offset)),
+  {OffsetToAck, NewPendingAcks} = remove_acked_header(PendingAcks1, false),
+  case is_integer(OffsetToAck) of
+    true ->
       %% tell upstream consumer to fetch more
-      ok = brod:consume_ack(ConsumerPid, Offset),
+      ok = brod:consume_ack(ConsumerPid, OffsetToAck),
       %% tell parent to update my next begin_offset in case i crash
       %% parent should also report it to coordinator and (later) commit to kafka
-      Parent ! {ack, UpstreamPartition, Offset},
-      State#{pending_acks := Rest};
-    {ExpectedRef, Offset, _Rest} ->
-      %% this means per-partition message ordering is broken
-      %% must be a bug in brod or brucke if we trust kafka
-      erlang:exit({unexpected_produce_reply, Route, UpstreamPartition,
-                   Offset, ExpectedRef, ReceivedRef})
-  end.
+      Parent ! {ack, UpstreamPartition, OffsetToAck};
+    false ->
+      ok
+  end,
+  State#{pending_acks := NewPendingAcks}.
+
+-spec remove_acked_header(pending_acks(), false | offset()) ->
+        {false | offset(), pending_acks()}.
+remove_acked_header([], LastOffset) ->
+  {LastOffset, []};
+remove_acked_header([?UNACKED(_CallRef, _Offset) | _] = Pending, LastOffset) ->
+  {LastOffset, Pending};
+remove_acked_header([?ACKED(_CallRef, Offset) | Rest], _LastOffset) ->
+  remove_acked_header(Rest, Offset).
 
 -spec handle_consumer_down(state(), pid()) -> state().
 handle_consumer_down(#{consumer := Pid} = _State, Pid) ->
@@ -165,58 +207,13 @@ handle_consumer_down(State, _UnknownPid) ->
   State.
 
 %% @private Return a partition or a partitioner function.
-maybe_repartition(UpstreamPartition, Options) ->
-  case brucke_lib:get_repartitioning_strategy(Options) of
-    strict_p2p ->
-      UpstreamPartition;
-    key_hash ->
-      fun(_Topic, PartitionCount, Key, _Value) ->
-        {ok, erlang:phash2(Key, PartitionCount)}
-      end;
-    random ->
-      fun(_Topic, PartitionCount, _Key, _Value) ->
-        {ok, crypto:rand_uniform(0, PartitionCount)}
-      end
-  end.
-
--spec append_pending_acks(pending_acks(), [{brod_call_ref(), offset()}]) ->
-        pending_acks().
-append_pending_acks(PendingAcks, []) -> PendingAcks;
-append_pending_acks(PendingAcks, [{CallRef, _Offset} | _] = All) ->
-  #brod_call_ref{callee = Callee} = CallRef,
-  {PerCalleePendings, Rest} =
-    partition_map(fun({#brod_call_ref{callee = Pid, ref = Ref}, Offset}) ->
-                    Pid =:= Callee andalso {true, {Ref, Offset}}
-                  end, All),
-  NewPerCalleePendings = maps:get(Callee, PendingAcks, []) ++ PerCalleePendings,
-  NewPendingAcks = PendingAcks#{Callee => NewPerCalleePendings},
-  append_pending_acks(NewPendingAcks, Rest).
-
-%% @private combination of lists:partition and lists:map,
-%% Pred function return {true, Mapped} or false
-partition_map(Pred, List) ->
-  partition_map(Pred, List, [], []).
-
-partition_map(_Pred, [], Mapped, Remain) ->
-  {lists:reverse(Mapped), lists:reverse(Remain)};
-partition_map(Pred, [H | T], Mapped, Remain) ->
-  case Pred(H) of
-    {true, R} -> partition_map(Pred, T, [R | Mapped], Remain);
-    false     -> partition_map(Pred, T, Mapped, [H | Remain])
-  end.
-
-%% @private Take the first brod call reference which has the same callee
-%% as given out of the list.
--spec take_pending_ack(pending_acks(), brod_call_ref()) ->
-        {brod_call_ref() | none, offset() | none, pending_acks()}.
-take_pending_ack(PendingAcks, #brod_call_ref{callee = Callee}) ->
-  case maps:get(Callee, PendingAcks, []) of
-    [] ->
-      {none, none, PendingAcks};
-    [{Ref, Offset} | Rest] ->
-      ExpectedRef = #brod_call_ref{caller = self(), callee = Callee, ref = Ref},
-      NewPendingAcks = PendingAcks#{Callee => Rest},
-      {ExpectedRef, Offset, NewPendingAcks}
+repartition_fun(key_hash) ->
+  fun(_Topic, PartitionCount, Key, _Value) ->
+    {ok, erlang:phash2(Key, PartitionCount)}
+  end;
+repartition_fun(random) ->
+  fun(_Topic, PartitionCount, _Key, _Value) ->
+    {ok, crypto:rand_uniform(0, PartitionCount)}
   end.
 
 %%%_* Emacs ====================================================================
