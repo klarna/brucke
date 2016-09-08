@@ -128,7 +128,7 @@ do_handle_message_set(#{ route        := Route
         {ensure_binary(Key), ensure_binary(Value)}
       end, Messages),
   {ok, CallRef} = brod:produce(DownstreamClientId, DownstreamTopic,
-                               Partition, KafkaKvList),
+                               Partition, <<>>, KafkaKvList),
   State#{pending_acks := PendingAcks ++ [?UNACKED(CallRef, LastOffset)]};
 do_handle_message_set(#{ route        := Route
                        , pending_acks := PendingAcks
