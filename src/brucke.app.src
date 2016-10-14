@@ -16,7 +16,7 @@
 
 {application, brucke, [
   {description, "Inter-cluster bridge of kafka topics"},
-  {vsn, "1.0.0"},
+  {vsn, "1.3.0"},
   {registered, []},
   {applications, [
     kernel,
