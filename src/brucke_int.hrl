@@ -75,6 +75,23 @@
 -define(APPLICATION, brucke).
 -endif.
 
+-define(I2B(I), list_to_binary(integer_to_list(I))).
+
+%% counter and gauge
+-define(INC(Name, Value), brucke_metrics:inc(Name, Value)).
+-define(SET(Name, Value), brucke_metrics:set(Name, Value)).
+
+%% Metric names
+-define(MX_TOTAL_VOLUME(Cluster, Topic, Partition, Bytes),
+        ?INC([Cluster, Topic, ?I2B(Partition), <<"bytes">>], Bytes)).
+
+-define(MX_HIGH_WM_OFFSET(Cluster, Topic, Partition, Offset),
+        ?SET([Cluster, Topic, ?I2B(Partition), <<"high-wm">>], Offset)).
+-define(MX_CURRENT_OFFSET(Cluster, Topic, Partition, Offset),
+        ?SET([Cluster, Topic, ?I2B(Partition), <<"current">>], Offset)).
+-define(MX_LAGGING_OFFSET(Cluster, Topic, Partition, Offset),
+        ?SET([Cluster, Topic, ?I2B(Partition), <<"lagging">>], Offset)).
+
 -endif.
 
 %%%_* Emacs ====================================================================

@@ -23,7 +23,8 @@
     stdlib,
     crypto,
     lager,
-    brod
+    brod,
+    graphiter
   ]},
   {modules, []},
   {mod, {brucke_app, []}},

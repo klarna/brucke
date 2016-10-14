@@ -32,6 +32,7 @@ start_link() ->
 
 init(?ROOT_SUP) ->
   ok = brucke_config:init(),
+  ok = brucke_metrics:init(),
   AllClients = brucke_config:all_clients(),
   lists:foreach(
     fun({ClientId, Endpoints, ClientConfig}) ->
