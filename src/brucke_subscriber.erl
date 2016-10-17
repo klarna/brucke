@@ -39,11 +39,14 @@
 -spec start_link(route(), partition(), ?undef | offset()) -> {ok, pid()}.
 start_link(Route, UpstreamPartition, BeginOffset) ->
   Parent = self(),
+  #route{upstream = {UpstreamClientId, _UpstreamTopic}} = Route,
+  UpstreamClusterName = brucke_config:get_cluster_name(UpstreamClientId),
   State = #{ route              => Route
            , upstream_partition => UpstreamPartition
            , parent             => Parent
            , consumer           => subscribing
            , pending_acks       => []
+           , upstream_cluster   => UpstreamClusterName
            },
   Pid = proc_lib:spawn_link(fun() -> loop(State) end),
   Pid ! {subscribe, BeginOffset, 0},
@@ -104,10 +107,22 @@ subscribe(State, _BeginOffset, _UnknownRef) ->
   State.
 
 -spec handle_message_set(state(), pid(), #kafka_message_set{}) -> state().
-handle_message_set(#{route := Route} = State, Pid, MsgSet) ->
-  #route{options = Options} = Route,
+handle_message_set(#{ route              := Route
+                    , upstream_cluster   := Cluster
+                    , upstream_partition := Partition
+                    } = State, Pid, MsgSet) ->
+  #route{ upstream = {_UpstreamClientId, Topic}
+        , options  = Options
+        } = Route,
   #{consumer := Pid} = State, %% assert
   RepartStrategy = brucke_lib:get_repartitioning_strategy(Options),
+  #kafka_message_set{high_wm_offset = HighWmOffset} = MsgSet,
+  %% non empty list is safe here because brod never sends empty message set
+  [Msg | _] = MsgSet#kafka_message_set.messages,
+  Lagging = HighWmOffset - Msg#kafka_message.offset,
+  ?MX_LAGGING_OFFSET(Cluster, Topic, Partition, Lagging),
+  ?MX_HIGH_WM_OFFSET(Cluster, Topic, Partition, HighWmOffset),
+  ?MX_TOTAL_VOLUME(Cluster, Topic, Partition, msg_set_bytes(MsgSet)),
   do_handle_message_set(State, MsgSet, RepartStrategy).
 
 do_handle_message_set(#{ route        := Route
@@ -160,6 +175,7 @@ ensure_binary(B) when is_binary(B) -> B.
 -spec handle_produce_reply(state(), #brod_produce_reply{}) -> state().
 handle_produce_reply(#{ pending_acks       := PendingAcks
                       , parent             := Parent
+                      , upstream_cluster   := UpstreamCluster
                       , upstream_partition := UpstreamPartition
                       , consumer           := ConsumerPid
                       , route              := Route
@@ -167,6 +183,7 @@ handle_produce_reply(#{ pending_acks       := PendingAcks
   #brod_produce_reply{ call_ref = CallRef
                      , result   = brod_produce_req_acked %% assert
                      } = Reply,
+  #route{upstream = {_UpstreamClientId, UpstreamTopic}} = Route,
   Offset =
     case lists:keyfind(CallRef, 1, PendingAcks) of
       ?UNACKED(CallRef, Offset_) ->
@@ -182,6 +199,8 @@ handle_produce_reply(#{ pending_acks       := PendingAcks
     true ->
       %% tell upstream consumer to fetch more
       ok = brod:consume_ack(ConsumerPid, OffsetToAck),
+      ?MX_CURRENT_OFFSET(UpstreamCluster, UpstreamTopic,
+                         UpstreamPartition, OffsetToAck),
       %% tell parent to update my next begin_offset in case i crash
       %% parent should also report it to coordinator and (later) commit to kafka
       Parent ! {ack, UpstreamPartition, OffsetToAck};
@@ -215,6 +234,16 @@ repartition_fun(random) ->
   fun(_Topic, PartitionCount, _Key, _Value) ->
     {ok, crypto:rand_uniform(0, PartitionCount)}
   end.
+
+msg_set_bytes(#kafka_message_set{messages = Messages}) ->
+  msg_set_bytes(Messages, 0).
+
+msg_set_bytes([], Bytes) -> Bytes;
+msg_set_bytes([#kafka_message{key = K, value = V} | Rest], Bytes) ->
+  msg_set_bytes(Rest, Bytes + msg_bytes(K) + msg_bytes(V)).
+
+msg_bytes(undefined)           -> 0;
+msg_bytes(B) when is_binary(B) -> erlang:size(B).
 
 %%%_* Emacs ====================================================================
 %%% Local Variables:

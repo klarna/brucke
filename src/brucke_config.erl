@@ -70,7 +70,6 @@ init() ->
     [Configs] = yamerl_constr:file(File, [{erlang_atom_autodetection, true}]),
     do_init(Configs)
   catch C : E ->
-      
       lager:emergency("failed to load brucke config file ~s: ~p:~p\n~p",
                       [File, C, E, erlang:get_stacktrace()]),
       exit({bad_brucke_config, File})
