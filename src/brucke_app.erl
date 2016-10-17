@@ -24,10 +24,41 @@
 -include("brucke_int.hrl").
 
 start(_Type, _Args) ->
-	brucke_sup:start_link().
+  ok = maybe_update_env(),
+  brucke_sup:start_link().
 
 stop(_State) ->
-	ok.
+  ok.
+
+maybe_update_env() ->
+  VarSpecs =
+    [ {"BRUCKE_GRAPHITE_ROOT_PATH", graphite_root_path, binary}
+    , {"BRUCKE_GRAPHITE_HOST", graphite_host, string}
+    , {"BRUCKE_GRAPHITE_PORT", graphite_port, integer}
+    ],
+  maybe_update_env(VarSpecs).
+
+maybe_update_env([]) -> ok;
+maybe_update_env([{EnvVarName, AppVarName, Type} | VarSpecs]) ->
+  ok = maybe_set_app_env(EnvVarName, AppVarName, Type),
+  maybe_update_env(VarSpecs).
+
+maybe_set_app_env(EnvVarName, AppVarName, Type) ->
+  EnvVar = os:getenv(EnvVarName),
+  case EnvVar of
+    false -> ok;
+    []    -> ok;
+    X ->
+      Value = transform_env_var_value(X, Type),
+      lager:info("Setting app-env ~p from os-env ~s, value=~p",
+                 [AppVarName, EnvVarName, Value]),
+      application:set_env(?APPLICATION, AppVarName, Value)
+  end,
+  ok.
+
+transform_env_var_value(S, string) -> S;
+transform_env_var_value(S, binary) -> list_to_binary(S);
+transform_env_var_value(I, integer) -> list_to_integer(I).
 
 %%%_* Emacs ====================================================================
 %%% Local Variables:
