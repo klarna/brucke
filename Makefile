@@ -2,7 +2,7 @@ PROJECT = brucke
 PROJECT_DESCRIPTION = Inter-cluster bridge of kakfa topics
 PROJECT_VERSION = $(shell cat VSN)
 
-DEPS = lager brod yamler graphiter
+DEPS = lager brod yamerl graphiter
 
 dep_brod_commit = 2.2.3
 dep_yamler = git https://github.com/yakaz/yamerl.git
