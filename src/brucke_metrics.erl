@@ -27,9 +27,9 @@
 %% @doc Initialize metrics writer.
 -spec init() -> ok | {error, any()}.
 init() ->
-  Prefix0 = iolist_to_binary([atom_to_list(?APPLICATION), "."]),
+  Prefix0 = atom_to_list(?APPLICATION),
   Prefix = case application:get_env(?APPLICATION, graphite_root_path) of
-             {ok, Root} -> [Root, Prefix0];
+             {ok, Root} -> Root;
              undefined  -> Prefix0
            end,
   case application:get_env(?APPLICATION, graphite_host) of
@@ -37,7 +37,7 @@ init() ->
       %% not configured, do not start anything
       ok;
     {ok, Host} ->
-      Opts0 = [{prefix, Prefix}, {host, Host}],
+      Opts0 = [{prefix, iolist_to_binary(Prefix)}, {host, Host}],
       Opts = case application:get_env(?APPLICATION, graphite_port) of
                {ok, Port} -> [{port, Port} | Opts0];
                undefined  -> Opts0
