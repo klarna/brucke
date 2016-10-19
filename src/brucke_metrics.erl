@@ -61,7 +61,7 @@ set(Path, Val) when is_number(Val) ->
 %% @doc Replace the dots in topic names with hyphens.
 -spec format_topic(brod:topic()) -> binary().
 format_topic(Topic) ->
-  binary:replace(Topic, <<".">>, <<"-">>).
+  binary:replace(Topic, <<".">>, <<"-">>, [global]).
 
 %%%_* Emacs ====================================================================
 %%% Local Variables:
