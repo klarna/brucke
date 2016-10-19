@@ -18,6 +18,7 @@
 -export([ init/0
         , inc/2
         , set/2
+        , format_topic/1
         ]).
 
 -compile({no_auto_import,[set/1]}).
@@ -56,6 +57,11 @@ inc(Path, Inc) when is_integer(Inc) ->
 -spec set(graphiter:path(), number()) -> ok.
 set(Path, Val) when is_number(Val) ->
   graphiter:cast(?WRITER, Path, Val).
+
+%% @doc Replace the dots in topic names with hyphens.
+-spec format_topic(brod:topic()) -> binary().
+format_topic(Topic) ->
+  binary:replace(Topic, <<".">>, <<"-">>).
 
 %%%_* Emacs ====================================================================
 %%% Local Variables:
