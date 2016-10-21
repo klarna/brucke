@@ -10,7 +10,7 @@ Name: %{_name}
 Version: %{_version}
 Release: 1%{?dist}
 License: Apache License, Version 2.0
-URL: https://stash.int.klarna.net/scm/syn/brucke.git
+URL: https://github.com/klarna/brucke.git
 BuildRoot: %{_tmppath}/%{_name}-%{_version}-root
 Vendor: Klarna AB
 Packager: Ivan Dyachkov <ivan.dyachkov@klarna.com>
