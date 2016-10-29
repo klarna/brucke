@@ -18,7 +18,7 @@
 , { brucke
   , [ {config_file, {priv, "brucke.yml"}} %% or abs path
     , {graphite_host, "localhost"}
-    , {graphite_port, 2023}
+    , {graphite_port, 2003}
     ]
   }
 ].
