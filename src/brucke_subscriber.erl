@@ -117,13 +117,10 @@ handle_message_set(#{ route              := Route
   #{consumer := Pid} = State, %% assert
   RepartStrategy = brucke_lib:get_repartitioning_strategy(Options),
   #kafka_message_set{high_wm_offset = HighWmOffset} = MsgSet,
-  %% non empty list is safe here because brod never sends empty message set
-  [Msg | _] = MsgSet#kafka_message_set.messages,
-  Lagging = HighWmOffset - Msg#kafka_message.offset,
-  ?MX_LAGGING_OFFSET(Cluster, Topic, Partition, Lagging),
   ?MX_HIGH_WM_OFFSET(Cluster, Topic, Partition, HighWmOffset),
   ?MX_TOTAL_VOLUME(Cluster, Topic, Partition, msg_set_bytes(MsgSet)),
-  do_handle_message_set(State, MsgSet, RepartStrategy).
+  NewState = State#{high_wm_offset => HighWmOffset},
+  do_handle_message_set(NewState, MsgSet, RepartStrategy).
 
 do_handle_message_set(#{ route        := Route
                        , pending_acks := PendingAcks
@@ -179,6 +176,7 @@ handle_produce_reply(#{ pending_acks       := PendingAcks
                       , upstream_partition := UpstreamPartition
                       , consumer           := ConsumerPid
                       , route              := Route
+                      , high_wm_offset     := HighWmOffset
                       } = State, Reply) ->
   #brod_produce_reply{ call_ref = CallRef
                      , result   = brod_produce_req_acked %% assert
@@ -201,6 +199,8 @@ handle_produce_reply(#{ pending_acks       := PendingAcks
       ok = brod:consume_ack(ConsumerPid, OffsetToAck),
       ?MX_CURRENT_OFFSET(UpstreamCluster, UpstreamTopic,
                          UpstreamPartition, OffsetToAck),
+      ?MX_LAGGING_OFFSET(UpstreamCluster, UpstreamTopic,
+                         UpstreamPartition, HighWmOffset - OffsetToAck),
       %% tell parent to update my next begin_offset in case i crash
       %% parent should also report it to coordinator and (later) commit to kafka
       Parent ! {ack, UpstreamPartition, OffsetToAck};
