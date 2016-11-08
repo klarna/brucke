@@ -19,17 +19,19 @@
 %%
 %% kafka_clusters:
 %%   kafka_cluster_1:
-%%     - host: "localhost"
-%%       port: 9092
+%%     - localhost:9092
 %%   kafka_cluster_2:
-%%     - host: "kafka-1"
-%%       port: 9092
-%%     - host: "kafka-2"
-%%       port: 9092
+%%     - kafka-1:9092
+%%     - kafka-2:9092
 %% brod_clients:
 %%   - client: brod_client_1
 %%     cluster: kafka_cluster_1
-%%     config: [] # optional
+%%     config:
+%%       ssl:
+%%         # start with "priv/" or provide full path
+%%         cacertfile: priv/ssl/ca.crt
+%%         certfile: priv/ssl/client.crt
+%%         keyfile: priv/ssl/client.key
 %% routes:
 %%   - upstream_client: brod_client_1
 %%     downstream_client: brod_client_1
@@ -59,6 +61,7 @@
 -type config_value() :: atom() | string() | integer().
 -type config_entry() :: {config_tag(), config_value() | config()}.
 -type config() :: [config_entry()].
+-type client_id() :: brod:client_id().
 
 %%%_* APIs =====================================================================
 
@@ -249,13 +252,15 @@ validate_client(Client) ->
   try
     {_, ClientId} = lists:keyfind(client, 1, Client),
     {_, ClusterName} = lists:keyfind(cluster, 1, Client),
-    Config = proplists:get_value(config, Client, []),
+    Config0 = proplists:get_value(config, Client, []),
+    Config = validate_client_config(ClientId, Config0),
     {ensure_atom(ClientId),
      ensure_binary(ClusterName),
      Config}
-  catch C:E ->
-      lager:emergency("Bad brod client config: ~P.\n~p:~p\n~p",
-                      [Client, 9, C, E, erlang:get_stacktrace()]),
+  catch
+    error:Reason ->
+      lager:emergency("Bad brod client config: ~P.\nreason=~p\nstack=~p",
+                      [Client, 9, Reason, erlang:get_stacktrace()]),
       exit(bad_client_config)
   end.
 
@@ -286,7 +291,62 @@ validate_endpoint(Other) ->
 exit_on_bad_endpoint(Bad) ->
   lager:emergency("Expecting endpoints string of patern Host:Port\n"
                   "Got ~P", [Bad, 9]),
-  exit({bad_endpoint, Bad}).
+  exit(bad_endpoint).
+
+validate_client_config(ClientId, Config) when is_list(Config) ->
+  lists:map(fun(ConfigEntry) ->
+              do_validate_client_config(ClientId, ConfigEntry)
+            end, Config);
+validate_client_config(ClientId, Config) ->
+  lager:emergency("Expecing client config to be a list for client ~p.\nGot:~p",
+                  [ClientId, Config]),
+  exit(bad_client_config).
+
+do_validate_client_config(ClientId, {ssl, Options}) ->
+  {ssl, validate_ssl_files(ClientId, Options)};
+do_validate_client_config(_ClientId, {_, _} = ConfigEntry) ->
+  ConfigEntry;
+do_validate_client_config(ClientId, Other) ->
+  lager:emergency("Unknown client config entry for client ~p,"
+                  "expecting kv-pair\nGot:~p", [ClientId, Other]),
+  exit(bad_client_config_entry).
+
+-spec validate_ssl_files(client_id(), list()) -> list() | none().
+validate_ssl_files(ClientId, SslOptions) ->
+  lists:foldl(
+    fun(OptName, OptIn) ->
+      validate_ssl_files(ClientId, OptIn, OptName)
+    end, SslOptions, [cacertfile, certfile, keyfile]).
+
+-spec validate_ssl_files(client_id(), list(),
+                         cacertfile | certfile | keyfile) -> list() | none().
+validate_ssl_files(ClientId, SslOptions, OptName) ->
+  case lists:keyfind(OptName, 1, SslOptions) of
+    {_, Filename0} ->
+      Filename = validate_ssl_file(ClientId, Filename0),
+      lists:keyreplace(OptName, 1, SslOptions, {OptName, Filename});
+    false ->
+      lager:emergency("ssl option '~p' is not found for client ~p",
+                      [OptName, ClientId]),
+      exit(missing_ssl_option)
+  end.
+
+-spec validate_ssl_file(client_id(), filename()) -> filename() | none().
+validate_ssl_file(ClientId, Filename) ->
+  Path =
+    case filename:split(Filename) of
+      ["priv" | PrivPath] ->
+        filename:join([code:priv_dir(?APPLICATION) | PrivPath]);
+      _ ->
+        Filename
+    end,
+  case filelib:is_regular(Path) of
+    true ->
+      Path;
+    false ->
+      lager:emergency("ssl file ~p not found for client ~p", [Path, ClientId]),
+      exit(bad_ssl_file)
+  end.
 
 %%%_* Emacs ====================================================================
 %%% Local Variables:

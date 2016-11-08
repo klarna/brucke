@@ -1,9 +1,19 @@
 kafka_clusters:
   local_cluster:
     - localhost:9092
+  local_cluster_ssl:
+    - localhost:9192
 brod_clients:
   - client: client_1
     cluster: local_cluster
+  - client: client_2
+    cluster: local_cluster_ssl
+    config:
+      ssl:
+        # start with "priv/" or provide full path
+        cacertfile: priv/ssl/ca.crt
+        certfile: priv/ssl/client.crt
+        keyfile: priv/ssl/client.key
 routes:
   - upstream_client: client_1
     downstream_client: client_1
@@ -18,9 +28,10 @@ routes:
       - brucke-test-topic-2
     downstream_topic: brucke-test-topic-3
     repartitioning_strategy: key_hash
-  - upstream_client: client_1
-    downstream_client: client_1
+  - upstream_client: client_2
+    downstream_client: client_2
     upstream_topics:
       - brucke-test-topic-3
     downstream_topic: brucke-test-topic-1
     repartitioning_strategy: random
+
