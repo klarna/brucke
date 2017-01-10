@@ -128,12 +128,14 @@ convert_to_route_record(Route) ->
    , repartitioning_strategy := RepartitioningStrategy
    , max_partitions_per_group_member := MaxPartitionsPerGroupMember
    , default_begin_offset := BeginOffset
+   , compression := Compression
    } = Route,
+  ProducerConfig = [{compression, Compression}],
   ConsumerConfig = [{begin_offset, BeginOffset}],
   Options =
     #{ repartitioning_strategy => RepartitioningStrategy
      , max_partitions_per_group_member => MaxPartitionsPerGroupMember
-     , producer_config => [] %% TODO: populate from route options
+     , producer_config => ProducerConfig
      , consumer_config => ConsumerConfig
      },
   %% flatten out the upstream topics
@@ -151,6 +153,7 @@ defaults() ->
   #{ repartitioning_strategy         => ?DEFAULT_REPARTITIONING_STRATEGY
    , max_partitions_per_group_member => ?MAX_PARTITIONS_PER_GROUP_MEMBER
    , default_begin_offset            => ?DEFAULT_DEFAULT_BEGIN_OFFSET
+   , compression                     => ?DEFAULT_COMPRESSION
    }.
 
 schema() ->
@@ -190,8 +193,16 @@ schema() ->
              fmt("default_begin_offset should be either "
                  "'latest' or 'earliest'\nGot~p", [B])
        end
+   , compression =>
+       fun(_, C) ->
+           C =:= no_compression orelse
+           C =:= gzip           orelse
+           C =:= snappy         orelse
+           fmt("compression should be one of "
+               "[no_compression, gzip, snappy]\nGot~p", [C])
+       end
    }.
- 
+
 -spec apply_route_schema(raw_route(), #{}, #{}, #{}, validation_result()) ->
                             {ok, #{}} | {error, validation_result()} |
                             no_return().
@@ -352,7 +363,7 @@ client_not_configured_test() ->
 
 bad_topic_name_test() ->
   clean_setup(),
-  Base = 
+  Base =
     [ {upstream_client, client_1}
     , {downstream_client, client_1}
     ],
@@ -366,7 +377,7 @@ bad_topic_name_test() ->
 
 bad_routing_options_test() ->
   clean_setup(),
-  R0 = 
+  R0 =
     [ {upstream_client, client_1}
     , {upstream_topics, topic_1}
     , {downstream_client, client_1}
@@ -377,6 +388,7 @@ bad_routing_options_test() ->
            , [{max_partitions_per_group_member, x} | R0]
            , [{"unknown_string", x} | R0]
            , [{unknown, x} | R0]
+           , [{compression, x} | R0]
            ],
   ok = init(Routes),
   ?assertEqual([], all()),
@@ -391,7 +403,7 @@ mandatory_attribute_missing_test() ->
   ok = init([R]),
   ?assertEqual([], all()),
   ok = destroy().
- 
+
 duplicated_source_test() ->
   clean_setup(),
   ValidRoute1 = [ {upstream_client, client_1}
