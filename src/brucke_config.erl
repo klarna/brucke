@@ -40,6 +40,7 @@
 %%     downstream_topic: "topic_2"
 %%     repartitioning_strategy: strict_p2p
 %%     default_begin_offset: earliest # optional
+%%     compression: no_compression # optional
 %%
 -module(brucke_config).
 

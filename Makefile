@@ -4,11 +4,11 @@ PROJECT_VERSION = $(shell cat VSN)
 
 DEPS = lager brod yamerl graphiter
 
-dep_brod_commit = 2.2.6
+dep_brod_commit = 2.2.10
 dep_yamler = git https://github.com/yakaz/yamerl.git
 dep_yamerl_commit = v0.3.2-1
 dep_graphiter = git https://github.com/klarna/graphite-erlang.git
-dep_graphiter_commit = 1.0.3
+dep_graphiter_commit = 1.0.4
 
 TEST_DEPS = meck
 
@@ -31,7 +31,10 @@ MORE_ERLC_OPTS = +'{parse_transform, lager_transform}' -DAPPLICATION=brucke
 ERLC_OPTS += $(MORE_ERLC_OPTS)
 TEST_ERLC_OPTS += $(MORE_ERLC_OPTS)
 
-t: eunit
+tdir:
+	mkdir -p test
+
+t: tdir eunit
 	./scripts/cover-summary.escript eunit.coverdata
 
 test-env:
