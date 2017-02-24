@@ -317,19 +317,25 @@ validate_ssl_files(ClientId, SslOptions) ->
   lists:foldl(
     fun(OptName, OptIn) ->
       validate_ssl_files(ClientId, OptIn, OptName)
-    end, SslOptions, [cacertfile, certfile, keyfile]).
+    end, SslOptions, [ {mandatory, cacertfile}
+                     , {optional, certfile}
+                     , {optional, keyfile}
+                     ]).
 
 -spec validate_ssl_files(client_id(), list(),
-                         cacertfile | certfile | keyfile) -> list() | none().
-validate_ssl_files(ClientId, SslOptions, OptName) ->
+                         {mandatory | optional,
+                          cacertfile | certfile | keyfile}) -> list() | none().
+validate_ssl_files(ClientId, SslOptions, {MandatoryOr, OptName}) ->
   case lists:keyfind(OptName, 1, SslOptions) of
     {_, Filename0} ->
       Filename = validate_ssl_file(ClientId, Filename0),
       lists:keyreplace(OptName, 1, SslOptions, {OptName, Filename});
-    false ->
+    false when MandatoryOr =:= mandatory ->
       lager:emergency("ssl option '~p' is not found for client ~p",
                       [OptName, ClientId]),
-      exit(missing_ssl_option)
+      exit(missing_ssl_option);
+    false when MandatoryOr =:= optional ->
+      SslOptions
   end.
 
 -spec validate_ssl_file(client_id(), filename()) -> filename() | none().
@@ -348,6 +354,39 @@ validate_ssl_file(ClientId, Filename) ->
       lager:emergency("ssl file ~p not found for client ~p", [Path, ClientId]),
       exit(bad_ssl_file)
   end.
+
+%%%_* Tests ====================================================================
+
+-ifdef(TEST).
+
+-include_lib("eunit/include/eunit.hrl").
+
+validate_ssl_files_test() ->
+  ?assertException(exit, missing_ssl_option,
+                   validate_ssl_files(client_id, [])),
+  %% cacertfile is mandatory, and bad file should trigger exception
+  ?assertException(exit, bad_ssl_file,
+                   validate_ssl_files(client_id,
+                                      [{cacertfile, "no-such-file"}])),
+  %% certfile is optional but providing a bad file should still
+  %% raise an exception
+  ?assertException(exit, bad_ssl_file,
+                   validate_ssl_files(client_id,
+                                      [{cacertfile, "priv/ssl/ca.crt"},
+                                       {certfile, "no-such-file"}])),
+  %% OK case
+  ?assertMatch([{cacertfile, _}],
+               validate_ssl_files(client_id,
+                                  [{cacertfile, "priv/ssl/ca.crt"}])),
+
+  ?assertMatch([{cacertfile, _}, {keyfile, _}, {certfile, _}],
+               validate_ssl_files(client_id,
+                                  [{cacertfile, "priv/ssl/ca.crt"},
+                                   {keyfile, "priv/ssl/client.key"},
+                                   {certfile, "priv/ssl/client.crt"}
+                                  ])).
+
+-endif.
 
 %%%_* Emacs ====================================================================
 %%% Local Variables:
