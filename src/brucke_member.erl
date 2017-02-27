@@ -45,7 +45,6 @@
 -type topic() :: kafka_topic().
 -type partition() :: kafka_partition().
 -type offset() :: kafka_offset().
--type state() :: #{}.
 
 -define(SUBSCRIBER_RESTART_DELAY_SECONDS, 10).
 -define(DEAD(Ts), {dead_since, Ts}).
@@ -110,6 +109,8 @@ handle_info({post_init, #route{} = Route}, State) ->
   {noreply, State#{ coordinator => Pid
                   , route       => Route
                   , subscribers => []
+                  , upstream_client_mref => erlang:monitor(process, UpstreamClientId)
+                  , downstream_client_mref => erlang:monitor(process, UpstreamClientId)
                   }};
 handle_info(restart_dead_subscribers, State) ->
   {noreply, restart_dead_subscribers(State)};
@@ -119,15 +120,13 @@ handle_info({'EXIT', Pid, _Reason}, #{coordinator := Pid} = State) ->
   {stop, coordinator_down, State};
 handle_info({'EXIT', Pid, Reason}, State) ->
   NewState = handle_subscriber_down(State, Pid, Reason),
-  case are_all_subscribers_down(NewState) of
-    true ->
-      %% when all subscribers are down at the same time
-      %% very likely brod client is down
-      %% hence need a restart of the producers and consumers
-      {stop, all_subscribers_down, NewState};
-    false ->
-      {noreply, NewState}
-  end;
+  {noreply, NewState};
+handle_info({'DOWN', Ref, process, _Pid, _Reason},
+            #{upstream_client_mref := Ref} = State) ->
+  {stop, upstream_client_down, State};
+handle_info({'DOWN', Ref, process, _Pid, _Reason},
+            #{downstream_client_mref := Ref} = State) ->
+  {stop, downstream_client_down, State};
 handle_info(Info, State) ->
   lager:info("Unknown info: ~p", [Info]),
   {noreply, State}.
@@ -242,14 +241,6 @@ restart_dead_subscribers(Route, [#subscriber{ pid          = ?DEAD(Ts)
 restart_dead_subscribers(Route, [#subscriber{pid = Pid} = S | Rest]) ->
   true = is_pid(Pid), %% assert
   [S | restart_dead_subscribers(Route, Rest)].
-
--spec are_all_subscribers_down(state()) -> boolean().
-are_all_subscribers_down(#{subscribers := []}) ->
-  false;
-are_all_subscribers_down(#{subscribers := Subscribers}) ->
-  lists:all(fun(#subscriber{pid = ?DEAD(_)}) -> true;
-               (_                          ) -> false
-            end, Subscribers).
 
 -spec fmt_route(route()) -> iodata().
 fmt_route(Route) -> brucke_lib:fmt_route(Route).
