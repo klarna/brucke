@@ -100,7 +100,7 @@ get_partition_count({ClientId, Topic}) ->
     {error, 'UnknownTopicOrPartition'} ->
       none;
     {error, Reason} ->
-      exit({failed_to_get_partiton_count, ClientId, Topic, Reason})
+      exit({failed_to_get_partition_count, ClientId, Topic, Reason})
   end.
 
 -spec max_partitions_per_group_member(route_options()) -> pos_integer().
