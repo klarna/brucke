@@ -2,13 +2,15 @@ PROJECT = brucke
 PROJECT_DESCRIPTION = Inter-cluster bridge of kakfa topics
 PROJECT_VERSION = $(shell cat VSN)
 
-DEPS = lager brod yamerl graphiter
+DEPS = lager brod yamerl graphiter cowboy jsone
 
-dep_brod_commit = 2.2.15
+dep_brod_commit = 2.2.16
 dep_yamler = git https://github.com/yakaz/yamerl.git
 dep_yamerl_commit = v0.3.2-1
 dep_graphiter = git https://github.com/klarna/graphite-erlang.git
 dep_graphiter_commit = 1.0.4
+dep_cowboy = git https://github.com/ninenines/cowboy.git 2.0.0-pre.7
+dep_jsone = git https://github.com/sile/jsone.git 1.4.3
 
 TEST_DEPS = meck
 

@@ -1,5 +1,5 @@
 %%%
-%%%   Copyright (c) 2016 Klarna AB
+%%%   Copyright (c) 2016-2017 Klarna AB
 %%%
 %%%   Licensed under the Apache License, Version 2.0 (the "License");
 %%%   you may not use this file except in compliance with the License.
@@ -67,6 +67,8 @@
 -record(route, { upstream   :: {brod_client_id(), kafka_topic()}
                , downstream :: {brod_client_id(), kafka_topic()}
                , options    :: route_options()
+               , status = ok :: atom()
+               , reason     :: binary()
                }).
 
 -type route() :: #route{}.

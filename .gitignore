@@ -23,3 +23,5 @@ rebar.lock
 relx
 x86_64/
 *.coverdata
+*.iml
+.idea/

@@ -1,5 +1,5 @@
 %%%
-%%%   Copyright (c) 2016 Klarna AB
+%%%   Copyright (c) 2016-2017 Klarna AB
 %%%
 %%%   Licensed under the Apache License, Version 2.0 (the "License");
 %%%   you may not use this file except in compliance with the License.
@@ -20,6 +20,8 @@
 -export([ start_link/0
         , init/1
         , post_init/1
+        , get_children/0
+        , get_children/1
         ]).
 
 -include("brucke_int.hrl").
@@ -29,6 +31,14 @@
 
 start_link() ->
   supervisor3:start_link({local, ?ROOT_SUP}, ?MODULE, ?ROOT_SUP).
+
+-spec get_children() -> list().
+get_children() ->
+  get_children(?ROOT_SUP).
+
+-spec get_children(atom() | pid()) -> list().
+get_children(Pid) ->
+  supervisor3:which_children(Pid).
 
 init(?ROOT_SUP) ->
   ok = brucke_config:init(),
