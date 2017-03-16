@@ -83,7 +83,7 @@ Response:
         "routes": [
             {
                 "downstream": {
-                    "id": "brod_client_1",
+                    "client_id": "brod_client_1",
                     "topic": "topic_2"
                 },
                 "members": {
