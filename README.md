@@ -87,7 +87,7 @@ Response:
                     "topic": "topic_2"
                 },
                 "members": {
-                    "brucke_member1": "ok"
+                    "1": "ok"
                 },
                 "status": "ok",
                 "upstream": {
