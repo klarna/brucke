@@ -64,8 +64,11 @@
                        | #{route_option_key() => term()}.
 -type topic_name() :: atom() | string() | binary().
 
--record(route, { upstream   :: {brod_client_id(), kafka_topic()}
-               , downstream :: {brod_client_id(), kafka_topic()}
+-type upstream() :: {brod_client_id(), kafka_topic()}.
+-type downstream() :: {brod_client_id(), kafka_topic()}.
+
+-record(route, { upstream   :: upstream()
+               , downstream :: downstream()
                , options    :: route_options()
                , status = ok :: atom()
                , reason     :: binary()

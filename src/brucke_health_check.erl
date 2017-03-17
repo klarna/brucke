@@ -15,16 +15,30 @@
 %%%
 -module(brucke_health_check).
 
--define(UPSTREAM, <<"upstream">>).
--define(DOWNSTREAM, <<"downstream">>).
--define(STATUS, <<"status">>).
--define(MEMBERS, <<"members">>).
--define(TOPIC, <<"topic">>).
--define(CLIENT_ID, <<"client_id">>).
--define(CLIENTS, <<"clients">>).
--define(ROUTES, <<"routes">>).
+-define(UPSTREAM, upstream).
+-define(DOWNSTREAM, downstream).
+-define(STATUS, status).
+-define(MEMBERS, members).
+-define(TOPIC, topic).
+-define(CLIENT_ID, client_id).
+-define(CLIENTS, clients).
+-define(ROUTES, routes).
 
 -include("brucke_int.hrl").
+
+-type members_status() :: #{binary() => atom()}. %% member seqno encoded to binary
+-type upstream_map() :: #{?CLIENT_ID => client(), ?TOPIC => topic_name()}.
+-type downstream_map() :: #{?CLIENT_ID => client(), ?TOPIC => topic_name()}.
+-type status_value() :: atom() | binary().
+-type client_status() :: #{client() => status_value()}.
+-type route_status() :: #{ ?UPSTREAM => upstream_map()
+                         , ?DOWNSTREAM => downstream_map()
+                         , ?MEMBERS => members_status()
+                         , ?STATUS => status_value()
+                         }.
+-type status() :: #{ ?CLIENTS => [client_status()]
+                   , ?ROUTES  => [route_status()]
+                   }.
 
 %% API
 -export([init/0, get_report_data/1]).
@@ -39,30 +53,31 @@ init() ->
     _ -> ok
   end.
 
--spec get_report_data(proplists:proplist()) -> {boolean(), map()}.
+-spec get_report_data(proplists:proplist()) -> {boolean(), status()}.
 get_report_data(Params) ->
   AskClients = proplists:get_value(?CLIENTS, Params, true),
-  {AllCliends, Status} = get_all_clients(AskClients, true),
+  {AllCliends, Status} = get_all_clients(AskClients),
   AskRoutes = proplists:get_value(?ROUTES, Params, true),
   {AllRoutes, UStatus} = get_all_routes(AskRoutes, Status),
   {UStatus, #{?CLIENTS => AllCliends, ?ROUTES => AllRoutes}}.
 
-
 %% @private
--spec get_all_clients(boolean(), boolean()) -> {list(map()), boolean()}.
-get_all_clients(true, Status) ->
+-spec get_all_clients(AskedForClientStatus :: boolean()) ->
+        {[route_status()], boolean()}.
+get_all_clients(true) ->
   AllClients = brucke_config:all_clients(),
   lists:foldl(
     fun({ClientId, _, _}, {Acc, AccStatus}) ->
       case whereis(ClientId) of
         undefined -> {[#{ClientId => undefined} | Acc], false};
-        _ -> {[#{ClientId => ok} | Acc], AccStatus}
+        _         -> {[#{ClientId => ok} | Acc], AccStatus}
       end
-    end, {[], Status}, AllClients);
-get_all_clients(_, Status) -> {[], Status}.
+    end, {[], true}, AllClients);
+get_all_clients(false) ->
+  {[], true}.
 
 %% @private
--spec get_all_routes(boolean(), boolean()) -> {list(map()), boolean()}.
+-spec get_all_routes(boolean(), boolean()) -> {[route_status()], boolean()}.
 get_all_routes(true, Status) ->
   AllRoutes = brucke_config:all_routes(),
   AllRouteSups = brucke_sup:get_children(),
@@ -72,52 +87,72 @@ get_all_routes(true, Status) ->
 get_all_routes(_, Status) -> {[], Status}.
 
 %% @private
+-spec get_working_routes([route()], [{upstream(), pid()}], boolean()) ->
+        {[route_status()], boolean()}.
 get_working_routes(AllRoutes, AllRouteSups, Status) ->
   lists:foldl(
     fun(#route{upstream = Upstream, downstream = Downstream}, {Acc, UStatus}) ->
       {Route, Status1} = check_route(Upstream, AllRouteSups, UStatus),
       {UpstreamId, UpstreamTopic} = Upstream,
       {DownstreamId, DownstreamTopic} = Downstream,
-      Acc1 = [Route#{?UPSTREAM => #{?CLIENT_ID => UpstreamId, ?TOPIC => UpstreamTopic},
-        ?DOWNSTREAM => #{?CLIENT_ID => DownstreamId, ?TOPIC => DownstreamTopic}} | Acc],
+      Acc1 = [Route#{ ?UPSTREAM => #{?CLIENT_ID => UpstreamId,
+                                     ?TOPIC => UpstreamTopic},
+                      ?DOWNSTREAM => #{?CLIENT_ID => DownstreamId,
+                                       ?TOPIC => DownstreamTopic}} | Acc],
       {Acc1, Status1}
     end, {[], Status}, AllRoutes).
 
-%% @private
+%% @private Just one discarded route is enough to toggle status to false.
+-spec apply_discarded([route_status()], [route()], boolean()) -> [route_status()].
 apply_discarded(Working, DiscardedRoutes, Status) ->
-  lists:foldl(  % at least one discarded route is enough to toggle status to false.
-    fun(#route{upstream = {Id, Topic}, reason = Reason}, {Acc, _}) ->
-      {[#{?UPSTREAM => #{?CLIENT_ID => Id, ?TOPIC => Topic},
-        ?STATUS => Reason, ?MEMBERS => []} | Acc], false}
+  lists:foldl(
+    fun(#route{upstream = {UpstreamClientId, UpstreamTopic},
+               reason = Reason
+              }, {Acc, _}) ->
+      {[#{?UPSTREAM => #{?CLIENT_ID => UpstreamClientId,
+                         ?TOPIC => UpstreamTopic},
+          ?STATUS => Reason,
+          ?MEMBERS => []} | Acc], false}
     end, {Working, Status}, DiscardedRoutes).
 
 %% @private
+-spec check_route(upstream(), [{upstream(), pid() | atom()}], boolean()) ->
+        {route_status(), boolean()}.
 check_route(Upstream, Routes, Status) ->
   Res = lists:keyfind(Upstream, 1, Routes),
   check_process_status(Res, Status).
 
 %% @private
--spec check_process_status(pid(), boolean()) -> {map(), boolean()}.
-check_process_status({_, RoutePid, _, _}, Status) when is_pid(RoutePid) ->
+-spec check_process_status(pid(), boolean()) ->
+        {route_status(), boolean()}.
+check_process_status({_, RoutePid}, Status) when is_pid(RoutePid) ->
   try
-    Members = get_all_brucke_members(RoutePid, Status),
-    {#{?STATUS => ok, ?MEMBERS => Members}, Status}
+    {Members, NewStatus} = get_all_brucke_members(RoutePid, Status),
+    {#{?STATUS => ok, ?MEMBERS => Members}, NewStatus}
   catch exit : {noproc, _} ->
     {#{?STATUS => <<"dead">>, ?MEMBERS => []}, false}
   end;
-check_process_status({_, Status, _, _}, _) when Status == undefined; Status == restarting ->
-  {#{?STATUS => Status, ?MEMBERS => []}, false};
+check_process_status({_, SupStatus}, _) when is_atom(SupStatus) ->
+  {#{?STATUS => SupStatus, ?MEMBERS => []}, false};
 check_process_status(false, _) ->
   {#{?STATUS => <<"not under brucke_sup">>, ?MEMBERS => []}, false}.
 
 %% @private
+-spec get_all_brucke_members(pid(), boolean()) ->
+        {members_status(), boolean()}.
 get_all_brucke_members(RoutePid, Status) ->
   Members = brucke_sup:get_children(RoutePid),
   lists:foldl(
     fun
-      ({Id, ChildStatus, _, _}, {Acc, _}) when is_atom(ChildStatus) ->  % undefined/restarting
+      ({Id, ChildStatus}, {Acc, _}) when is_atom(ChildStatus) ->  % restarting
         {Acc#{integer_to_binary(Id) => ChildStatus}, false};
-      ({Id, ChildPid, _, _}, {Acc, UStatus}) when is_pid(ChildPid) ->
+      ({Id, ChildPid}, {Acc, UStatus}) when is_pid(ChildPid) ->
         {Acc#{integer_to_binary(Id) => ok}, UStatus}
     end,
     {#{}, Status}, Members).
+
+%%%_* Emacs ====================================================================
+%%% Local Variables:
+%%% allout-layout: t
+%%% erlang-indent-level: 2
+%%% End:

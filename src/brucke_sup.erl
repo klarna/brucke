@@ -32,13 +32,15 @@
 start_link() ->
   supervisor3:start_link({local, ?ROOT_SUP}, ?MODULE, ?ROOT_SUP).
 
--spec get_children() -> list().
+-spec get_children() -> [{ID::term(), pid() | atom()}].
 get_children() ->
   get_children(?ROOT_SUP).
 
--spec get_children(atom() | pid()) -> list().
+-spec get_children(atom() | pid()) -> [{ID::term(), pid() | atom()}].
 get_children(Pid) ->
-  supervisor3:which_children(Pid).
+  lists:map(fun({ID, ChildPid, _Worker, _Modules}) ->
+                {ID, ChildPid}
+            end, supervisor3:which_children(Pid)).
 
 init(?ROOT_SUP) ->
   ok = brucke_config:init(),
