@@ -38,5 +38,5 @@ reply(Req, Code, Data) ->
   cowboy_req:reply(Code, ?JSON, Data, Req).
 
 %% @private
-status_to_code(true) -> 100;
+status_to_code(true) -> 200;
 status_to_code(false) -> 500.
