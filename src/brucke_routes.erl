@@ -1,5 +1,5 @@
 %%%
-%%%   Copyright (c) 2016 Klarna AB
+%%%   Copyright (c) 2016-2017 Klarna AB
 %%%
 %%%   Licensed under the Apache License, Version 2.0 (the "License");
 %%%   you may not use this file except in compliance with the License.
@@ -18,8 +18,8 @@
 -export([ all/0
         , destroy/0
         , init/1
-        , lookup/2
-        ]).
+        , lookup_ok/2
+        , get_by_status/1]).
 
 -include("brucke_int.hrl").
 
@@ -52,11 +52,11 @@ init(Other) ->
   erlang:exit(bad_routes_config).
 
 %% @doc Lookup in config cache for the message routing destination.
--spec lookup(brod_client_id(), kafka_topic()) -> route() | false.
-lookup(UpstreamClientId, UpstreamTopic) ->
+-spec lookup_ok(brod_client_id(), kafka_topic()) -> route() | false.
+lookup_ok(UpstreamClientId, UpstreamTopic) ->
   case ets:lookup(?ETS, {UpstreamClientId, UpstreamTopic}) of
-    []      -> false;
-    [Route] -> Route
+    [Route = #route{status = ok}] -> Route;
+    _ -> false
   end.
 
 %% @doc Delete Ets.
@@ -71,7 +71,13 @@ destroy() ->
 
 %% @doc Get all routes from cache.
 -spec all() -> [route()].
-all() -> ets:tab2list(?ETS).
+all() ->
+  get_by_status(ok).
+
+-spec get_by_status(atom()) -> [route()].
+get_by_status(Status) ->
+  ets:select(?ETS, [{#route{status = '$1', _='_'}, [{'==', '$1', Status}], ['$_']}]).
+
 
 %%%_* Internal functions =======================================================
 
@@ -84,10 +90,12 @@ do_init_loop([RawRoute | Rest]) ->
         ok = insert_routes(Routes);
       {error, Reasons} ->
         Rs = [[Reason, "\n"] || Reason <- Reasons],
+        mark_inactive_route(RawRoute, skipped, Rs),
         ok = brucke_lib:log_skipped_route_alert(RawRoute, Rs)
     end
   catch throw : Reason ->
       ReasonTxt = io_lib:format("~p", [Reason]),
+      mark_inactive_route(RawRoute, skipped, ReasonTxt),
       ok = brucke_lib:log_skipped_route_alert(RawRoute, ReasonTxt)
   end,
   do_init_loop(Rest).
@@ -120,6 +128,21 @@ validate_route(RawRoute0) ->
       {error, Reasons}
   end.
 
+%% @private
+mark_inactive_route(Route, Status, Reason) ->
+  MaybeId = proplists:get_value(upstream_client, Route),
+  MaybeTopic = case proplists:get_value(upstream_topics, Route) of
+                undefined -> [undefined];
+                Topics -> topics(Topics)
+              end,
+  lists:foreach(
+    fun(Topic) ->
+      ets:insert(?ETS,
+                 #route{upstream = {MaybeId, Topic}
+                       , status = Status
+                       , reason = list_to_binary(lists:flatten(Reason))})
+    end, MaybeTopic).
+
 convert_to_route_record(Route) ->
   #{ upstream_client := UpstreamClientId
    , upstream_topics := UpstreamTopics
@@ -139,7 +162,7 @@ convert_to_route_record(Route) ->
      , consumer_config => ConsumerConfig
      },
   %% flatten out the upstream topics
-  %% to cimplify the config as if it's all
+  %% to simplify the config as if it's all
   %% one upstream topic to one downstream topic mapping
   MapF =
     fun(Topic) ->
@@ -351,7 +374,7 @@ no_ets_leak_test() ->
 
 client_not_configured_test() ->
   clean_setup(false),
-  R0 = 
+  R0 =
     [ {upstream_client, client_2}
     , {upstream_topics, topic_1}
     , {downstream_client, client_3}
@@ -427,8 +450,8 @@ duplicated_source_test() ->
                , #route{upstream = {client_1, <<"topic_4">>}}
                ], all_sorted()),
   ?assertMatch(#route{upstream = {client_1, <<"topic_1">>}},
-               lookup(client_1, <<"topic_1">>)),
-  ?assertEqual(false, lookup(client_1, <<"unknown_topic">>)),
+               lookup_ok(client_1, <<"topic_1">>)),
+  ?assertEqual(false, lookup_ok(client_1, <<"unknown_topic">>)),
   ok = destroy().
 
 direct_loopback_test() ->

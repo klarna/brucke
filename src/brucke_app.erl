@@ -1,5 +1,5 @@
 %%%
-%%%   Copyright (c) 2016 Klarna AB
+%%%   Copyright (c) 2016-2017 Klarna AB
 %%%
 %%%   Licensed under the Apache License, Version 2.0 (the "License");
 %%%   you may not use this file except in compliance with the License.
@@ -25,7 +25,12 @@
 
 start(_Type, _Args) ->
   ok = maybe_update_env(),
-  brucke_sup:start_link().
+  case brucke_sup:start_link() of
+    Res = {ok, _} ->
+      ok = brucke_health_check:init(),
+      Res;
+    Err -> Err
+  end.
 
 stop(_State) ->
   ok.
@@ -35,6 +40,8 @@ maybe_update_env() ->
     [ {"BRUCKE_GRAPHITE_ROOT_PATH", graphite_root_path, binary}
     , {"BRUCKE_GRAPHITE_HOST", graphite_host, string}
     , {"BRUCKE_GRAPHITE_PORT", graphite_port, integer}
+    , {"BRUCKE_HEALTHCHECK", healthcheck, boolean}
+    , {"BRUCKE_HEALTHCHECK_PORT", healthcheck_port, integer}
     ],
   maybe_update_env(VarSpecs).
 
@@ -58,6 +65,7 @@ maybe_set_app_env(EnvVarName, AppVarName, Type) ->
 
 transform_env_var_value(S, string) -> S;
 transform_env_var_value(S, binary) -> list_to_binary(S);
+transform_env_var_value(B, boolean) -> list_to_existing_atom(B);
 transform_env_var_value(I, integer) -> list_to_integer(I).
 
 %%%_* Emacs ====================================================================
