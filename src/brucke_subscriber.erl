@@ -122,9 +122,10 @@ handle_message_set(#{ route              := Route
   NewState = State#{high_wm_offset => HighWmOffset},
   do_handle_message_set(NewState, MsgSet, RepartStrategy).
 
+%% @private
 do_handle_message_set(#{ route        := Route
                        , pending_acks := PendingAcks
-                       } = State, MsgSet, strict_p2p) ->
+                       } = State, MsgSet, RepartStrategy) ->
   #kafka_message_set{ topic     = Topic
                     , partition = Partition
                     , messages  = Messages
@@ -132,43 +133,26 @@ do_handle_message_set(#{ route        := Route
   #route{ upstream = {_UpstreamClientId, Topic}
         , downstream = {DownstreamClientId, DownstreamTopic}
         } = Route,
-  %% lists:last/1 is safe here because brod never sends empty message set
-  #kafka_message{offset = LastOffset} = lists:last(Messages),
-  KafkaKvList =
-    lists:map(
-      fun(#kafka_message{key = Key, value = Value}) ->
-        {ensure_binary(Key), ensure_binary(Value)}
-      end, Messages),
-  {ok, CallRef} = brod:produce(DownstreamClientId, DownstreamTopic,
-                               Partition, <<>>, KafkaKvList),
-  State#{pending_acks := PendingAcks ++ [?UNACKED(CallRef, LastOffset)]};
-do_handle_message_set(#{ route        := Route
-                       , pending_acks := PendingAcks
-                       } = State, MsgSet, RepartStrategy) ->
-  #kafka_message_set{ topic    = Topic
-                    , messages = Messages
-                    } = MsgSet,
-  #route{ upstream = {_UpstreamClientId, Topic}
-        , downstream = {DownstreamClientId, DownstreamTopic}
-        } = Route,
+  PartitionOrFun = maybe_repartition(Partition, RepartStrategy),
   NewPendingAcks =
     lists:map(
       fun(#kafka_message{ offset = Offset
                         , key    = Key
                         , value  = Value
                         }) ->
-        PartitionFun = repartition_fun(RepartStrategy),
         {ok, CallRef} = brod:produce(DownstreamClientId, DownstreamTopic,
-                                     PartitionFun,
+                                     PartitionOrFun,
                                      ensure_binary(Key),
                                      ensure_binary(Value)),
         ?UNACKED(CallRef, Offset)
       end, Messages),
   State#{pending_acks := PendingAcks ++ NewPendingAcks}.
 
+%% @private
 ensure_binary(undefined)           -> <<>>;
 ensure_binary(B) when is_binary(B) -> B.
 
+%% @private
 -spec handle_produce_reply(state(), #brod_produce_reply{}) -> state().
 handle_produce_reply(#{ pending_acks       := PendingAcks
                       , parent             := Parent
@@ -209,6 +193,7 @@ handle_produce_reply(#{ pending_acks       := PendingAcks
   end,
   State#{pending_acks := NewPendingAcks}.
 
+%% @private
 -spec remove_acked_header(pending_acks(), false | offset()) ->
         {false | offset(), pending_acks()}.
 remove_acked_header([], LastOffset) ->
@@ -218,6 +203,7 @@ remove_acked_header([?UNACKED(_CallRef, _Offset) | _] = Pending, LastOffset) ->
 remove_acked_header([?ACKED(_CallRef, Offset) | Rest], _LastOffset) ->
   remove_acked_header(Rest, Offset).
 
+%% @private
 -spec handle_consumer_down(state(), pid()) -> state().
 handle_consumer_down(#{consumer := Pid} = _State, Pid) ->
   %% maybe start a send_after retry timer
@@ -226,22 +212,29 @@ handle_consumer_down(State, _UnknownPid) ->
   State.
 
 %% @private Return a partition or a partitioner function.
-repartition_fun(key_hash) ->
+-spec maybe_repartition(partition(), repartitioning_strategy()) ->
+        partition() | brod_partition_fun().
+maybe_repartition(Partition, strict_p2p) ->
+  Partition;
+maybe_repartition(_Partition, key_hash) ->
   fun(_Topic, PartitionCount, Key, _Value) ->
     {ok, erlang:phash2(Key, PartitionCount)}
   end;
-repartition_fun(random) ->
+maybe_repartition(_Partition, random) ->
   fun(_Topic, PartitionCount, _Key, _Value) ->
     {ok, crypto:rand_uniform(0, PartitionCount)}
   end.
 
+%% @private
 msg_set_bytes(#kafka_message_set{messages = Messages}) ->
   msg_set_bytes(Messages, 0).
 
+%% @private
 msg_set_bytes([], Bytes) -> Bytes;
 msg_set_bytes([#kafka_message{key = K, value = V} | Rest], Bytes) ->
   msg_set_bytes(Rest, Bytes + msg_bytes(K) + msg_bytes(V)).
 
+%% @private
 msg_bytes(undefined)           -> 0;
 msg_bytes(B) when is_binary(B) -> erlang:size(B).
 

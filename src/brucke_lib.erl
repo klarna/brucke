@@ -19,6 +19,7 @@
 -export([ log_skipped_route_alert/2
         , get_consumer_config/1
         , get_repartitioning_strategy/1
+        , get_producer_config/1
         , fmt_route/1
         ]).
 
@@ -50,9 +51,16 @@ get_consumer_config(Options) ->
     maps:get(consumer_config, Options, []),
     default_consumer_config()).
 
+-spec get_producer_config(route_options()) -> brod_producer_config().
+get_producer_config(Options) ->
+  maybe_use_brucke_defaults(
+    maps:get(producer_config, Options, []),
+    default_producer_config()).
+
 %%%_* Internal Functions =======================================================
 
-%% use hard-coded defaults if not found in config
+
+%% @private use hard-coded defaults if not found in config
 maybe_use_brucke_defaults(Config, []) ->
   Config;
 maybe_use_brucke_defaults(Config, [{K, V} | Rest]) ->
@@ -63,10 +71,17 @@ maybe_use_brucke_defaults(Config, [{K, V} | Rest]) ->
     end,
   maybe_use_brucke_defaults(NewConfig, Rest).
 
-%% The default values for brucke.
+%% @private The default values for brucke.
 default_consumer_config() ->
   [ {prefetch_count, 12}
   , {begin_offset, latest}
+  ].
+
+%% @private Default producer config
+default_producer_config() ->
+  [ {max_linger_ms, 2000} %% 2 seconds
+  , {max_linger_count, 100}
+  , {max_batch_size, 800000} %% 800K
   ].
 
 %%%_* Emacs ====================================================================

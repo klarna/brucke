@@ -110,7 +110,7 @@ handle_info({post_init, #route{} = Route}, State) ->
                   , route       => Route
                   , subscribers => []
                   , upstream_client_mref => erlang:monitor(process, UpstreamClientId)
-                  , downstream_client_mref => erlang:monitor(process, UpstreamClientId)
+                  , downstream_client_mref => erlang:monitor(process, DownstreamClientId)
                   }};
 handle_info(restart_dead_subscribers, State) ->
   {noreply, restart_dead_subscribers(State)};
