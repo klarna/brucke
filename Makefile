@@ -4,7 +4,7 @@ PROJECT_VERSION = $(shell cat VSN)
 
 DEPS = lager brod yamerl graphiter cowboy jsone
 
-dep_brod_commit = 2.3.1
+dep_brod_commit = 2.3.4
 dep_yamler = git https://github.com/yakaz/yamerl.git
 dep_yamerl_commit = v0.3.2-1
 dep_graphiter = git https://github.com/klarna/graphite-erlang.git
