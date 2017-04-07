@@ -28,8 +28,8 @@
 -type offset() :: kafka_offset().
 -type state() :: #{}.
 -define(UNACKED(CallRef, Offset), {CallRef, Offset, unacked}).
--define(ACKED(CallRef, Offset) ,{CallRef, Offset, acked}).
--type pending_acks() :: [{brod_call_ref(), offset(), unacked | acked}].
+-define(ACKED(CallRef, Offset), {CallRef, Offset, acked}).
+-type pending_acks() :: [{brod_call_ref() | ignored, offset(), unacked | acked}].
 
 -define(SUBSCRIBE_RETRY_LIMIT, 3).
 -define(SUBSCRIBE_RETRY_SECONDS, 2).
@@ -77,6 +77,7 @@ loop(State) ->
       erlang:exit({unknown_message, Unknown})
   end.
 
+%% @private
 -spec subscribe(state(), offset(), non_neg_integer()) -> state() | no_return().
 subscribe(#{ route              := Route
            , upstream_partition := UpstreamPartition
@@ -106,26 +107,28 @@ subscribe(#{ route              := Route
 subscribe(State, _BeginOffset, _UnknownRef) ->
   State.
 
+%% @private
 -spec handle_message_set(state(), pid(), #kafka_message_set{}) -> state().
 handle_message_set(#{ route              := Route
                     , upstream_cluster   := Cluster
                     , upstream_partition := Partition
                     } = State, Pid, MsgSet) ->
   #route{ upstream = {_UpstreamClientId, Topic}
-        , options  = Options
+        , options  = RouteOptions
         } = Route,
   #{consumer := Pid} = State, %% assert
-  RepartStrategy = brucke_lib:get_repartitioning_strategy(Options),
   #kafka_message_set{high_wm_offset = HighWmOffset} = MsgSet,
   ?MX_HIGH_WM_OFFSET(Cluster, Topic, Partition, HighWmOffset),
   ?MX_TOTAL_VOLUME(Cluster, Topic, Partition, msg_set_bytes(MsgSet)),
   NewState = State#{high_wm_offset => HighWmOffset},
-  do_handle_message_set(NewState, MsgSet, RepartStrategy).
+  do_handle_message_set(NewState, MsgSet, RouteOptions).
 
 %% @private
 do_handle_message_set(#{ route        := Route
                        , pending_acks := PendingAcks
-                       } = State, MsgSet, RepartStrategy) ->
+                       } = State, MsgSet, RouteOptions) ->
+  RepartStrategy = brucke_lib:get_repartitioning_strategy(RouteOptions),
+  #{filter_module := FilterModule} = RouteOptions,
   #kafka_message_set{ topic     = Topic
                     , partition = Partition
                     , messages  = Messages
@@ -134,38 +137,50 @@ do_handle_message_set(#{ route        := Route
         , downstream = {DownstreamClientId, DownstreamTopic}
         } = Route,
   PartitionOrFun = maybe_repartition(Partition, RepartStrategy),
-  NewPendingAcks =
-    lists:map(
-      fun(#kafka_message{ offset = Offset
-                        , key    = Key
-                        , value  = Value
-                        }) ->
-        {ok, CallRef} = brod:produce(DownstreamClientId, DownstreamTopic,
+  FilterFun =
+    fun(Offset, Key, Value) ->
+        brucke_filter:filter(FilterModule, Topic, Partition, Offset, Key, Value)
+    end,
+  ProduceFun =
+    fun(Key, Value) ->
+        {ok, CallRef} = brod:produce(DownstreamClientId,
+                                     DownstreamTopic,
                                      PartitionOrFun,
-                                     ensure_binary(Key),
-                                     ensure_binary(Value)),
-        ?UNACKED(CallRef, Offset)
-      end, Messages),
-  State#{pending_acks := PendingAcks ++ NewPendingAcks}.
+                                     Key, Value),
+        CallRef
+    end,
+  NewPendingAcks = produce(FilterFun, ProduceFun, Messages, []),
+  handle_acked(State#{pending_acks := PendingAcks ++ NewPendingAcks}).
 
 %% @private
-ensure_binary(undefined)           -> <<>>;
-ensure_binary(B) when is_binary(B) -> B.
+-spec produce(fun((offset(), kafka_key(), kafka_value()) -> brucke_filter:filter_result()),
+              fun((kafka_key(), kafka_value()) -> brod_call_ref()),
+              [#kafka_message{}], pending_acks()) -> pending_acks().
+produce(_FilterFun, _ProduceFun, [], PendingAcks) ->
+  lists:reverse(PendingAcks);
+produce(FilterFun, ProduceFun, [#kafka_message{offset = Offset,
+                                               key = Key,
+                                               value = Value} | Rest], PendingAcks) ->
+  NewPending =
+    case FilterFun(Offset, Key, Value) of
+      true ->
+        ?UNACKED(ProduceFun(Key, Value), Offset);
+      {NewKey, NewValue} ->
+        ?UNACKED(ProduceFun(NewKey, NewValue), Offset);
+      false ->
+        ?ACKED(ignored, Offset)
+    end,
+  produce(FilterFun, ProduceFun, Rest, [NewPending | PendingAcks]).
 
 %% @private
 -spec handle_produce_reply(state(), #brod_produce_reply{}) -> state().
 handle_produce_reply(#{ pending_acks       := PendingAcks
-                      , parent             := Parent
-                      , upstream_cluster   := UpstreamCluster
                       , upstream_partition := UpstreamPartition
-                      , consumer           := ConsumerPid
                       , route              := Route
-                      , high_wm_offset     := HighWmOffset
                       } = State, Reply) ->
   #brod_produce_reply{ call_ref = CallRef
                      , result   = brod_produce_req_acked %% assert
                      } = Reply,
-  #route{upstream = {_UpstreamClientId, UpstreamTopic}} = Route,
   Offset =
     case lists:keyfind(CallRef, 1, PendingAcks) of
       ?UNACKED(CallRef, Offset_) ->
@@ -174,9 +189,22 @@ handle_produce_reply(#{ pending_acks       := PendingAcks
         erlang:exit({unexpected_produce_reply, Route, UpstreamPartition,
                      PendingAcks, CallRef})
     end,
-  PendingAcks1 =
+  NewPendingAcks =
     lists:keyreplace(CallRef, 1, PendingAcks, ?ACKED(CallRef, Offset)),
-  {OffsetToAck, NewPendingAcks} = remove_acked_header(PendingAcks1, false),
+  handle_acked(State#{pending_acks := NewPendingAcks}).
+
+%% @private
+-spec handle_acked(state()) -> state().
+handle_acked(#{ pending_acks       := PendingAcks
+              , parent             := Parent
+              , upstream_cluster   := UpstreamCluster
+              , upstream_partition := UpstreamPartition
+              , consumer           := ConsumerPid
+              , route              := Route
+              , high_wm_offset     := HighWmOffset
+              } = State) ->
+  #route{upstream = {_UpstreamClientId, UpstreamTopic}} = Route,
+  {OffsetToAck, NewPendingAcks} = remove_acked_header(PendingAcks, false),
   case is_integer(OffsetToAck) of
     true ->
       %% tell upstream consumer to fetch more

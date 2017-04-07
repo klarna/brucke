@@ -23,8 +23,10 @@
 
 -include("brucke_int.hrl").
 
+%% @private Application callback.
 start(_Type, _Args) ->
   ok = maybe_update_env(),
+  ok = add_filter_ebin_dirs(),
   case brucke_sup:start_link() of
     Res = {ok, _} ->
       ok = brucke_health_check:init(),
@@ -32,9 +34,11 @@ start(_Type, _Args) ->
     Err -> Err
   end.
 
+%% @doc Application callback.
 stop(_State) ->
   ok.
 
+%% @private
 maybe_update_env() ->
   VarSpecs =
     [ {"BRUCKE_GRAPHITE_ROOT_PATH", graphite_root_path, binary}
@@ -42,14 +46,17 @@ maybe_update_env() ->
     , {"BRUCKE_GRAPHITE_PORT", graphite_port, integer}
     , {"BRUCKE_HEALTHCHECK", healthcheck, boolean}
     , {"BRUCKE_HEALTHCHECK_PORT", healthcheck_port, integer}
+    , {"BRUCKE_FILTER_EBIN_PATHS", filter_ebin_dirs, fun parse_paths/1}
     ],
   maybe_update_env(VarSpecs).
 
+%% @private
 maybe_update_env([]) -> ok;
 maybe_update_env([{EnvVarName, AppVarName, Type} | VarSpecs]) ->
   ok = maybe_set_app_env(EnvVarName, AppVarName, Type),
   maybe_update_env(VarSpecs).
 
+%% @private
 maybe_set_app_env(EnvVarName, AppVarName, Type) ->
   EnvVar = os:getenv(EnvVarName),
   case EnvVar of
@@ -63,10 +70,24 @@ maybe_set_app_env(EnvVarName, AppVarName, Type) ->
   end,
   ok.
 
+%% @private
 transform_env_var_value(S, string) -> S;
 transform_env_var_value(S, binary) -> list_to_binary(S);
 transform_env_var_value(B, boolean) -> list_to_existing_atom(B);
-transform_env_var_value(I, integer) -> list_to_integer(I).
+transform_env_var_value(I, integer) -> list_to_integer(I);
+transform_env_var_value(I, Fun) -> Fun(I).
+
+%% @private Parse comma or colon separated paths.
+parse_paths(Paths) -> string:tokens(Paths, ":,").
+
+%% @private Add extra ebin paths to code path.
+%% There is usually no need to set `filter_ebin_dirs`
+%% if brucke is used as a lib application for another project.
+%% @end
+-spec add_filter_ebin_dirs() -> ok.
+add_filter_ebin_dirs() ->
+  Dirs = application:get_env(?APPLICATION, filter_ebin_dirs, []),
+  ok = code:add_pathsa(Dirs).
 
 %%%_* Emacs ====================================================================
 %%% Local Variables:

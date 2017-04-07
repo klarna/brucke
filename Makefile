@@ -4,7 +4,7 @@ PROJECT_VERSION = $(shell cat VSN)
 
 DEPS = lager brod yamerl graphiter cowboy jsone
 
-dep_brod_commit = 2.3.4
+dep_brod_commit = 2.3.5
 dep_yamler = git https://github.com/yakaz/yamerl.git
 dep_yamerl_commit = v0.3.2-1
 dep_graphiter = git https://github.com/klarna/graphite-erlang.git
@@ -33,10 +33,7 @@ MORE_ERLC_OPTS = +'{parse_transform, lager_transform}' -DAPPLICATION=brucke
 ERLC_OPTS += $(MORE_ERLC_OPTS)
 TEST_ERLC_OPTS += $(MORE_ERLC_OPTS)
 
-tdir:
-	mkdir -p test
-
-t: tdir eunit
+t: eunit ct
 	./scripts/cover-summary.escript eunit.coverdata
 
 test-env:
