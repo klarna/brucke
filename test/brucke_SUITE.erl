@@ -26,8 +26,14 @@
         , suite/0
         ]).
 
+%% brucke_filter behaviour callback
+-export([ init/2
+        , filter/5
+        ]).
+
 %% Test cases
--export([ t_filter/1
+-export([ t_basic/1
+        , t_filter/1
         ]).
 
 -include_lib("common_test/include/ct.hrl").
@@ -36,8 +42,6 @@
 
 -define(HOST, "localhost").
 -define(HOSTS, [{?HOST, 9092}]).
--define(UPSTREAM, <<"brucke-filter-test-upstream">>).
--define(DOWNSTREAM, <<"brucke-filter-test-downstream">>).
 
 %%%_* ct callbacks =============================================================
 
@@ -77,32 +81,91 @@ all() -> [F || {F, _A} <- module_info(exports),
                     _         -> false
                   end].
 
+init(_UpstreamTopic, _DownstreamTopic) -> ok.
+
+filter(_Topic, _Partition, _Offset, Key, Value) ->
+  case binary_to_integer(Key) rem 3 of
+    0 -> true; %% as is
+    1 -> false; %% discard
+    2 -> {Key, bin(int(Value) + 1)} %% transform
+  end.
 
 %%%_* Test functions ===========================================================
 
+t_basic(Config) when is_list(Config) ->
+  UPSTREAM = <<"brucke-basic-test-upstream">>,
+  DOWNSTREAM = <<"brucke-basic-test-downstream">>,
+  Client = client_1, %% configured in priv/brucke.yml
+  ok = brod:start_producer(Client, UPSTREAM, []),
+  {ok, [Offset]} = brod:get_offsets(?HOSTS, DOWNSTREAM, 0, latest, 1),
+  V0 = uniq_int(),
+  V1 = uniq_int(),
+  V2 = uniq_int(),
+  ok = brod:produce_sync(Client, UPSTREAM, 0, <<"0">>, bin(V0)),
+  ok = brod:produce_sync(Client, UPSTREAM, 0, <<"1">>, bin(V1)),
+  ok = brod:produce_sync(Client, UPSTREAM, 0, <<"2">>, bin(V2)),
+  FetchFun = fun(Of) ->
+                 brod:fetch(?HOSTS, DOWNSTREAM, 0, Of, 1000, 10, 1000)
+             end,
+  Messages = fetch_loop(FetchFun, V0, Offset, _TryMax = 20, [], _Count = 3),
+  ?assertEqual([{0, V0}, {1, V1}, {2, V2}], Messages).
+
+%% Send 3 messages to upstream topic
+%% Expect them to be mirrored to downstream toicp with below filtering logic
+%% When the key integer's mod-3 is a remainder
+%% 0: message is forwarded as-is to downstream
+%% 1: message is discarded
+%% 2: value integer is transformed with '+ 1' then forwarded to downstream.
+%%
 %% Assume brucket application is started using `priv/brucke.yml'
 t_filter(Config) when is_list(Config) ->
+  UPSTREAM = <<"brucke-filter-test-upstream">>,
+  DOWNSTREAM = <<"brucke-filter-test-downstream">>,
   Client = client_1, %% configured in priv/brucke.yml
-  ok = brod:start_producer(Client, ?UPSTREAM, []),
-  {ok, [Offset]} = brod:get_offsets(?HOSTS, ?DOWNSTREAM, 0, latest, 1),
-  ok = brod:produce_sync(Client, ?UPSTREAM, 0, <<"0">>, <<"v-0">>), %% as is
-  ok = brod:produce_sync(Client, ?UPSTREAM, 0, <<"1">>, <<"v-1">>), %% ignore
-  ok = brod:produce_sync(Client, ?UPSTREAM, 0, <<"2">>, <<"v-2">>), %% mutate
-  Messages = fetch_loop(Offset, 10, [], 2),
-  ?assertMatch([#kafka_message{key = <<"0">>, value = <<"v-0">>},
-                #kafka_message{key = <<"2-X">>, value = <<"v-2-X">>}
+  ok = brod:start_producer(Client, UPSTREAM, []),
+  {ok, [Offset]} = brod:get_offsets(?HOSTS, DOWNSTREAM, 0, latest, 1),
+  V0 = uniq_int(),
+  V1 = uniq_int(),
+  V2 = uniq_int(),
+  ok = brod:produce_sync(Client, UPSTREAM, 0, <<"0">>, bin(V0)), %% as is
+  ok = brod:produce_sync(Client, UPSTREAM, 0, <<"1">>, bin(V1)), %% ignore
+  ok = brod:produce_sync(Client, UPSTREAM, 0, <<"2">>, bin(V2)), %% mutate
+  FetchFun = fun(Of) ->
+                 brod:fetch(?HOSTS, DOWNSTREAM, 0, Of, 1000, 10, 1000)
+             end,
+  Messages = fetch_loop(FetchFun, V0, Offset, _TryMax = 20, [], 2),
+  ?assertEqual([{0, V0}, %% as is
+                %% 1 is discarded
+                {2, V2 + 1} %% transformed
                ], Messages).
 
 %%%_* Help functions ===========================================================
 
-fetch_loop(_Offset, 0, Acc, Count) -> Acc;
-fetch_loop(_Offset, _Try, Acc, 0) -> Acc;
-fetch_loop(Offset, N, Acc, Count) ->
-  case brod:fetch(?HOSTS, ?DOWNSTREAM, 0, Offset, 1000, 10, 1000) of
-    {ok, []} -> fetch_loop(Offset, N - 1, Acc, Count);
-    {ok, Msgs} -> fetch_loop(Offset + length(Msgs), N - 1, Acc ++ Msgs,
-                             Count - length(Msgs))
+fetch_loop(_F, _V0, _Offset, N, Acc, C) when N =< 0 orelse C =< 0 -> Acc;
+fetch_loop(F, V0, Offset, N, Acc, Count) ->
+  case F(Offset) of
+    {ok, []} ->
+      fetch_loop(F, V0, Offset, N - 1, Acc, Count);
+    {ok, Msgs0} ->
+      Msgs =
+        lists:filtermap(fun(#kafka_message{key = Key, value = Value}) ->
+                            case int(Value) >= V0 of
+                              true  -> {true, {int(Key), int(Value)}};
+                              false -> false
+                            end
+                        end, Msgs0),
+      ct:pal("received: ~p", [Msgs]),
+      C = length(Msgs),
+      fetch_loop(F, V0, Offset + C, N - 1, Acc ++ Msgs, Count - C)
   end.
+
+uniq_int() ->
+  {M, S, Micro} = os:timestamp(),
+  (M * 1000000 + S) * 1000000 + Micro.
+
+bin(X) -> integer_to_binary(X).
+
+int(B) -> binary_to_integer(B).
 
 %%%_* Emacs ====================================================================
 %%% Local Variables:

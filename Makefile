@@ -34,7 +34,7 @@ ERLC_OPTS += $(MORE_ERLC_OPTS)
 TEST_ERLC_OPTS += $(MORE_ERLC_OPTS)
 
 t: eunit ct
-	./scripts/cover-summary.escript eunit.coverdata
+	./scripts/cover-summary.escript eunit.coverdata ct.coverdata
 
 test-env:
 	./scripts/start-test-brokers.sh
