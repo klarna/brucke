@@ -90,13 +90,14 @@ init(Route) ->
   self() ! {post_init, Route},
   {ok, #{}}.
 
-handle_info({post_init, #route{} = Route}, State) ->
+handle_info({post_init, #route{options = Options} = Route}, State) ->
   {UpstreamClientId, UpstreamTopic} = Route#route.upstream,
   {DownstreamClientId, DownstreamTopic} = Route#route.downstream,
+  #{filter_module := FilterModule} = Options,
+  ok = brucke_filter:init(FilterModule, UpstreamTopic, DownstreamTopic),
   GroupConfig = [{offset_commit_policy, commit_to_kafka_v2}
                 ,{offset_commit_interval_seconds, 10}
                 ],
-  Options = Route#route.options,
   ConsumerConfig = brucke_lib:get_consumer_config(Options),
   ProducerConfig = maps:get(producer_config, Options, []),
   ok = brod:start_consumer(UpstreamClientId, UpstreamTopic, ConsumerConfig),

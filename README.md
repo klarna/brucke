@@ -66,15 +66,15 @@ Operating via systemctl:
 
 # Healthcheck
 To enable http healthcheck handler add `{healthcheck, true}` to sys.config for `brucke` application.  
-Alternatively, you can use corresponding OS env variables:  
+Alternatively, you can use corresponding OS env variables:
 - BRUCKE_HEALTHCHECK
 - BRUCKE_HEALTHCHECK_PORT
 
-After that you can query healthcheck on `http://Host:8080/healthckeck`.  
+After that you can query healthcheck on `http://Host:8080/healthckeck`.
 Response:
 
     {
-    
+
         "clients": [
             {
                 "brod_client_1": "ok"
@@ -96,24 +96,24 @@ Response:
                 }
             }
         ]
-    
+
     }
-Where:  
-__routes__ is a list of `brucke_member_sup` processes.  
-__members__ is a list of `brucke_member` processes.  
-__consumers__ and __producers__ can be a list or an object with `{"status" : Error}` meaning that no 
-consumers/producers can be found for this id and topic.  
+Where:
+__routes__ is a list of `brucke_member_sup` processes.
+__members__ is a list of `brucke_member` processes.
+__consumers__ and __producers__ can be a list or an object with `{"status" : Error}` meaning that no
+consumers/producers can be found for this id and topic.
 __Error__ is a string, f.e. `{"status": "client_down"}`
 
 ### Custom query
-To make custom query use parameters in healthcheck request:  
-__clients__ - if `false` will return empty clients. Default is `true`.  
-__routes__ - if `false` will return empty routes. Default is `true`.  
+To make custom query use parameters in healthcheck request:
+__clients__ - if `false` will return empty clients. Default is `true`.
+__routes__ - if `false` will return empty routes. Default is `true`.
 Example:
 `http://127.0.0.1:8080/health?routes=false`
 
     {
-    
+
         "clients": [
             {
                 "client_2": "undefined"
@@ -123,5 +123,6 @@ Example:
             }
         ],
         "routes": [ ]
-    
+
     }
+

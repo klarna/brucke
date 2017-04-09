@@ -35,3 +35,20 @@ routes:
     downstream_topic: brucke-test-topic-1
     repartitioning_strategy: random
 
+  - upstream_client: client_1
+    downstream_client: client_2
+    upstream_topics:
+      - brucke-basic-test-upstream
+    downstream_topic: brucke-basic-test-downstream
+    repartitioning_strategy: strict_p2p
+    default_begin_offset: earliest
+
+  - upstream_client: client_1
+    downstream_client: client_2
+    upstream_topics:
+      - brucke-filter-test-upstream
+    downstream_topic: brucke-filter-test-downstream
+    repartitioning_strategy: strict_p2p
+    filter_module: brucke_SUITE
+    default_begin_offset: earliest
+

@@ -26,7 +26,8 @@
 -type route_option_key() :: repartitioning_strategy
                           | producer_config
                           | consumer_config
-                          | max_partitions_per_group_member.
+                          | max_partitions_per_group_member
+                          | filter_module.
 
 %% Message repartitioning strategy.
 %% NOTE: For compacted topics, strict_p2p is the only choice.
@@ -49,6 +50,7 @@
          X =:= strict_p2p orelse
          X =:= random)).
 
+-define(DEFAULT_FILTER, brucke_filter).
 -define(MAX_PARTITIONS_PER_GROUP_MEMBER, 12).
 -define(DEFAULT_DEFAULT_BEGIN_OFFSET, latest).
 -define(DEFAULT_COMPRESSION, no_compression).

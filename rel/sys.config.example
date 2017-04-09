@@ -21,6 +21,7 @@
     , {graphite_port, 2003}
     , {healthcheck, true}
     , {healthcheck_port, 8080}
+    , {filter_ebin_dirs, []}
     ]
   }
 ].
