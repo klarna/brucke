@@ -31,16 +31,14 @@
 -type filter_result() :: boolean() | {kafka_key(), kafka_value()}.
 
 %% Called when route worker (`brucke_member') start/restart.
-%% The assumption now is that the callback implementor should be stateless.
-%% This is why is no support for callback state returned. i.e. the filter
-%% is designed to be a `filter' not intended to be a `fold'.
-%% In case the callback implementor needs to be stateful, they will have
-%% to register global names etc.
+%% The assumption now is that the callback should be stateless.
+%% This is why there is no support for callback state returned.
+%% i.e. the filter is designed like a `lists:filtermap' but not `lists:foldl'.
 -callback init(Upstream :: kafka_topic(), Downstream :: kafka_topic()) -> ok.
 
 %% Called by assignment worker (`brucke_subscriber') for each message.
-%% Retrun value implications:
-%% true: No change, just forward the message as-is to downstream
+%% Return value implications:
+%% true: No change, forward the message as-is to downstream
 %% false: Discard the message
 %% {NewKey, NewValue}: Produce the transformed new Key and Value to downstream.
 -callback filter(Topic :: kafka_topic(),
