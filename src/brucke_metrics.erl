@@ -21,6 +21,8 @@
         , format_topic/1
         ]).
 
+-include("brucke_int.hrl").
+
 -compile({no_auto_import,[set/1]}).
 
 -define(WRITER, ?MODULE). %% the registered name of graphiter_writer
@@ -33,7 +35,7 @@ init() ->
              {ok, Root} -> Root;
              undefined  -> Prefix0
            end,
-  case application:get_env(?APPLICATION, graphite_host) of
+  case application:get_env(?APPLICATION, graphite_host, undefined) of
     undefined ->
       %% not configured, do not start anything
       ok;

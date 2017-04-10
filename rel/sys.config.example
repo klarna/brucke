@@ -17,7 +17,7 @@
    ]}
 , { brucke
   , [ {config_file, {priv, "brucke.yml"}} %% or abs path
-    , {graphite_host, "localhost"}
+    , {graphite_host, undefined} %% undefined to disable, "localhost" to test
     , {graphite_port, 2003}
     , {healthcheck, true}
     , {healthcheck_port, 8080}

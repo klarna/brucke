@@ -15,6 +15,9 @@
 %%%
 -module(brucke_health_check).
 
+%% API
+-export([init/0, get_report_data/1]).
+
 -define(UPSTREAM, upstream).
 -define(DOWNSTREAM, downstream).
 -define(STATUS, status).
@@ -40,26 +43,35 @@
                    , ?ROUTES  => [route_status()]
                    }.
 
-%% API
--export([init/0, get_report_data/1]).
-
 init() ->
   case application:get_env(?APPLICATION, healthcheck) of
     {ok, true} ->
       Port = application:get_env(?APPLICATION, healthcheck_port, 8080),
       Dispatch = cowboy_router:compile([{'_', [{'_', brucke_http_handler, []}]}]),
-      {ok, _} = cowboy:start_clear(http, 1, [{port, Port}], #{env => #{dispatch => Dispatch}}),
+      {ok, _} = cowboy:start_http(http, 8, [{port, Port}],
+                                  [{env, [{dispatch, Dispatch}]}]),
       ok;
     _ -> ok
   end.
 
 -spec get_report_data(proplists:proplist()) -> {boolean(), status()}.
 get_report_data(Params) ->
-  AskClients = proplists:get_value(?CLIENTS, Params, true),
+  AskClients = qs_bool(?CLIENTS, Params),
   {AllCliends, Status} = get_all_clients(AskClients),
-  AskRoutes = proplists:get_value(?ROUTES, Params, true),
+  AskRoutes = qs_bool(?ROUTES, Params),
   {AllRoutes, UStatus} = get_all_routes(AskRoutes, Status),
   {UStatus, #{?CLIENTS => AllCliends, ?ROUTES => AllRoutes}}.
+
+%% @private
+qs_bool(Key, Params) when is_atom(Key) ->
+  qs_bool(atom_to_binary(Key, utf8), Params);
+qs_bool(Key, Params) ->
+  boolean(proplists:get_value(Key, Params, true)).
+
+%% @private
+-spec boolean(boolean() | binary()) -> boolean().
+boolean(<<"false">>) -> false;
+boolean(_)           -> true.
 
 %% @private
 -spec get_all_clients(AskedForClientStatus :: boolean()) ->

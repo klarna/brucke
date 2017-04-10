@@ -4,13 +4,12 @@ PROJECT_VERSION = $(shell cat VSN)
 
 DEPS = lager brod yamerl graphiter cowboy jsone
 
-dep_brod_commit = 2.3.5
-dep_yamler = git https://github.com/yakaz/yamerl.git
-dep_yamerl_commit = v0.3.2-1
-dep_graphiter = git https://github.com/klarna/graphite-erlang.git
-dep_graphiter_commit = 1.0.4
-dep_cowboy = git https://github.com/ninenines/cowboy.git 2.0.0-pre.7
-dep_jsone = git https://github.com/sile/jsone.git 1.4.3
+dep_lager = hex 3.2.4
+dep_brod = hex 2.3.5
+dep_yamerl = hex 0.4.0
+dep_graphiter = hex 1.0.4
+dep_jsone = hex 1.4.3
+dep_cowboy = hex 1.1.2
 
 TEST_DEPS = meck
 
@@ -28,7 +27,7 @@ include erlang.mk
 
 ERL_LIBS := $(ERL_LIBS):$(CURDIR)
 
-MORE_ERLC_OPTS = +'{parse_transform, lager_transform}' -DAPPLICATION=brucke
+MORE_ERLC_OPTS = +'{parse_transform, lager_transform}'
 
 ERLC_OPTS += $(MORE_ERLC_OPTS)
 TEST_ERLC_OPTS += $(MORE_ERLC_OPTS)
@@ -52,4 +51,10 @@ rpm: all
 			--define "_description $(PROJECT_DESCRIPTION)" \
 			--define "_version $(PROJECT_VERSION)" \
 			rpm/brucke.spec
+
+vsn-check:
+	$(verbose) ./scripts/vsn-check.sh $(PROJECT_VERSION)
+
+hex-publish: distclean
+	$(verbose) rebar3 hex publish
 
