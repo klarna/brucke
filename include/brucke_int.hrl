@@ -19,6 +19,8 @@
 
 -include_lib("brod/include/brod.hrl").
 
+-define(APPLICATION, brucke).
+
 -define(undef, undefined).
 
 -type filename() :: string().

@@ -20,10 +20,15 @@ otp_release:
 
 script:
   - set -e
+  - make vsn-check
   - make deps
   - make app
   - make xref
   - make edoc
   - make test-env
   - make t
+  - make distclean
+  - echo "verifying rebar3 compilation"
+  - git clone https://github.com/erlang/rebar3.git; cd rebar3; ./bootstrap; cd ..
+  - ./rebar3/rebar3 compile
 

@@ -29,6 +29,7 @@ Cluster names and client names must comply to erlang atom syntax.
         downstream_topic: "topic_2"
         repartitioning_strategy: strict_p2p
         default_begin_offset: earliest # optional
+        filter_module: brucke_filter # optional
 
 ## Options for repartitioning strategy
 NOTE: For compacted topics, strict_p2p is the only choice.
@@ -37,6 +38,10 @@ NOTE: For compacted topics, strict_p2p is the only choice.
 - strict_p2p: strictly map the upstream partition number to downstream partition number, worker will refuse to start if 
 upstream and downstream topic has different number of partitions
 - random: randomly distribute upstream messages to downstream partitions
+
+## Customized Message Filtering and or Transformation
+
+Implement `brucke_filter` behaviour to have messages filtered and or transformed before produced to downstream topic.
 
 # Graphite reporting
 If the following app config variables are set, brucke will send metrics to a configured graphite endpoint:
