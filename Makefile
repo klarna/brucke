@@ -1,5 +1,5 @@
 PROJECT = brucke
-PROJECT_DESCRIPTION = Inter-cluster bridge of kakfa topics
+PROJECT_DESCRIPTION = Inter-cluster bridge of kafka topics
 PROJECT_VERSION = $(shell cat VSN)
 
 DEPS = lager brod yamerl graphiter cowboy jsone

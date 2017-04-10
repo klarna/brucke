@@ -20,11 +20,10 @@
 -export([init/3, act/2, content_types_provided/2]).
 
 init(_, _, []) ->
-	{upgrade, protocol, cowboy_rest}.
+  {upgrade, protocol, cowboy_rest}.
 
 content_types_provided(Req, State) ->
-	{[{<<"application/json">>, act}
-	 ], Req, State}.
+  {[{<<"application/json">>, act}], Req, State}.
 
 act(Req, State) ->
   try
@@ -43,10 +42,10 @@ act(<<"/health", _/binary>>, Req, State) ->
   QS = cow_qs:parse_qs(RawQS),
   {Status, Health} = brucke_health_check:get_report_data(QS),
   reply(Req, status_to_code(Status), jsone:encode(Health)),
-	{halt, Req, State};
+  {halt, Req, State};
 act(_, Req, State) ->
   reply(Req, 404, jsone:encode(#{<<"error">> => <<"Not found">>})),
-	{halt, Req, State}.
+  {halt, Req, State}.
 
 %% @private
 -spec reply(cowboy_req:req(), integer(), binary()) -> cowboy_req:req().

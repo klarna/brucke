@@ -31,5 +31,4 @@ script:
   - echo "verifying rebar3 compilation"
   - git clone https://github.com/erlang/rebar3.git; cd rebar3; ./bootstrap; cd ..
   - ./rebar3/rebar3 compile
-  - rebar3 compile
 
