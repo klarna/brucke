@@ -49,12 +49,10 @@
         , get_cluster_name/1
         , get_consumer_group_id/1
         , all_clients/0
-        , all_routes/0
+        , get_client_endpoints/1
         ]).
 
 -include("brucke_int.hrl").
-
--define(CONFIG_FILE_ENV_VAR_NAME, "BRUCKE_CONFIG_FILE").
 
 -define(ETS, ?MODULE).
 
@@ -68,7 +66,7 @@
 
 -spec init() -> ok | no_return().
 init() ->
-  File = get_file_path_from_config(),
+  File = assert_file(brucke_app:config_file()),
   yamerl_app:set_param(node_mods, [yamerl_node_erlang_atom]),
   try
     [Configs] = yamerl_constr:file(File, [{erlang_atom_autodetection, true}]),
@@ -105,34 +103,22 @@ all_clients() ->
     ClientConfig
    } || {ClientId, ClusterName, ClientConfig} <- ets:tab2list(?ETS)].
 
--spec all_routes() -> [route()].
-all_routes() -> brucke_routes:all().
+-spec get_client_endpoints(
+        brod_client_id()) -> [{string(), integer()}] | undefined.
+get_client_endpoints(ClientId) ->
+  case lookup(ClientId) of
+    false ->
+      undefined;
+    {ClientId, ClusterName, _} ->
+      case lookup(ClusterName) of
+        false ->
+          undefined;
+        {ClusterName, Endpoints} ->
+          Endpoints
+      end
+  end.
 
 %%%_* Internal functions =======================================================
-
--spec get_file_path_from_config() -> filename() | no_return().
-get_file_path_from_config() ->
-  case os:getenv("BRUCKE_CONFIG_FILE") of
-    false ->
-      case application:get_env(brucke, config_file) of
-        {ok, Path0} ->
-          Path = assert_file(Path0),
-          lager:info("Using brucke config file from application environment "
-                     "'config_file': ~p", [Path]),
-          Path;
-        ?undef ->
-          lager:emergency("Brucke config file not found! "
-                          "It can either be specified by "
-                          "environment variable ~s, "
-                          "or in ~p application environment (sys.config)",
-                          [?CONFIG_FILE_ENV_VAR_NAME, ?APPLICATION]),
-          exit(brucke_config_not_found)
-      end;
-    Path ->
-      lager:info("Using brucke config file from OS env ~s: ~s",
-                 [?CONFIG_FILE_ENV_VAR_NAME, Path]),
-      assert_file(Path)
-  end.
 
 -spec assert_file(filename() | {priv, filename()}) -> filename() | no_return().
 assert_file({priv, Path}) ->
@@ -153,7 +139,7 @@ do_init(Configs) ->
            {K, V} ->
              V;
            false ->
-             lager:emergency("kafka_cluster is not found in config"),
+             lager:emergency("~p is not found in config", [K]),
              exit({mandatory_config_entry_not_found, K})
          end
        end,

@@ -35,29 +35,6 @@ mkdir -p %{buildroot}%{_bindir}
 mkdir -p %{buildroot}%{_sharedstatedir}/%{_service}
 cp -r _rel/%{_name} %{buildroot}%{_libdir}/
 
-cat > rewrite_sys_config.erl <<EOF
--module(rewrite_sys_config).
-main(_) ->
-  {ok, [Config0]} = file:consult("rel/sys.config"),
-  %% fix lager log root
-  LagerConfig0 = proplists:get_value(lager, Config0, []),
-  LagerConfig  = lists:keystore(log_root, 1, LagerConfig0, {log_root, "%{_log_dir}"}),
-  Config1 = lists:keystore(lager, 1, Config0, {lager, LagerConfig}),
-
-  BruckeConfig0 = proplists:get_value(brucke, Config1, []),
-  BruckeConfig  = lists:keystore(config_file, 1, BruckeConfig0, {config_file, "%{_conf_dir}/brucke.config"}),
-  Config = lists:keystore(brucke, 1, Config1, {brucke, BruckeConfig}),
-
-  file:write_file("rel/sys.config", io_lib:format("~p.~n", [Config])),
-  {ok, _} = file:consult("rel/sys.config"),
-  ok.
-
-EOF
-escript rewrite_sys_config.erl
-rm -f rewrite_sys_config.erl
-%{__install} -p -D -m 0644 rel/sys.config %{buildroot}%{_conf_dir}/sys.config
-%{__install} -p -D -m 0644 rel/vm.args %{buildroot}%{_conf_dir}/vm.args
-
 cat > %{buildroot}%{_unitdir}/%{_service}.service <<EOF
 [Unit]
 Description=Apache Kafka Inter-cluster Bridging
@@ -76,8 +53,9 @@ EOF
 
 cat > %{buildroot}%{_sysconfdir}/sysconfig/%{_service} <<EOF
 RUNNER_LOG_DIR=%{_log_dir}
-RELX_CONFIG_PATH=%{_sysconfdir}/%{_service}/sys.config
-VMARGS_PATH=%{_sysconfdir}/%{_service}/vm.args
+RELX_REPLACE_OS_VARS=true
+BRUCKE_LOG_ROOT=%{_log_dir}
+BRUCKE_CONFIG_FILE=%{_conf_dir}/brucke.config
 PIPE_DIR=%{_sharedstatedir}/%{_service}
 EOF
 

@@ -76,7 +76,6 @@
 -record(route, { upstream   :: upstream()
                , downstream :: downstream()
                , options    :: route_options()
-               , status = ok :: atom()
                , reason     :: binary()
                }).
 

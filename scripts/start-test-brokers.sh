@@ -1,8 +1,8 @@
 #!/bin/bash -e
 
-THIS_DIR="$(dirname $(readlink -f $0))"
+THIS_DIR="$(cd "$(dirname "$0")" && pwd)"
 
-cd $THIS_DIR/../deps/brod/docker
+cd $THIS_DIR/../_build/default/lib/brod/docker
 
 ## maybe rebuild
 sudo docker-compose -f docker-compose-basic.yml build
