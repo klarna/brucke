@@ -7,7 +7,7 @@ DEPS = lager brod yamerl graphiter cowboy jsone
 dep_lager = hex 3.2.4
 dep_brod = hex 2.3.5
 dep_yamerl = hex 0.4.0
-dep_graphiter = hex 1.0.4
+dep_graphiter = hex 1.0.5
 dep_jsone = hex 1.4.3
 dep_cowboy = hex 1.1.2
 
@@ -18,12 +18,12 @@ ERLC_OPTS = -Werror +warn_unused_vars +warn_shadow_vars +warn_unused_import +war
 CT_OPTS = -ct_use_short_names true
 COVER = true
 
+include erlang.mk
+
 rel:: rel/sys.config
 
 rel/sys.config: | rel/sys.config.example
 	cp $| $@
-
-include erlang.mk
 
 ERL_LIBS := $(ERL_LIBS):$(CURDIR)
 
