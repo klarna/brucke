@@ -43,7 +43,7 @@ healthcheck_enabled() -> app_env(healthcheck).
 
 healthcheck_port() -> app_env(healthcheck_port).
 
-config_file_path() -> app_env(config_file_path).
+config_file_path() -> app_env(config_file_path, {priv, "brucke.yml"}).
 
 %% @private Application callback.
 start(_Type, _Args) ->
@@ -113,9 +113,10 @@ add_filter_ebin_dirs() ->
   Dirs = application:get_env(?APPLICATION, filter_ebin_dirs, []),
   ok = code:add_pathsa(Dirs).
 
-app_env(Key) ->
-  {ok, Value} = application:get_env(?APPLICATION, Key),
-  Value.
+app_env(Key) -> app_env(Key, undefined).
+
+app_env(Key, Def) ->
+  application:get_env(?APPLICATION, Key, Def).
 
 %%%_* Emacs ====================================================================
 %%% Local Variables:
