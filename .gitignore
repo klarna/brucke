@@ -12,7 +12,6 @@ test/ct.cover.spec
 .erlang.mk
 eunit.coverdata
 ct.coverdata
-sys.config
 xrefr
 _build/
 _rel/

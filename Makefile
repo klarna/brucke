@@ -18,14 +18,7 @@ ERLC_OPTS = -Werror +warn_unused_vars +warn_shadow_vars +warn_unused_import +war
 CT_OPTS = -ct_use_short_names true
 COVER = true
 
-all:: app-build
-
-rel:: rel/sys.config
-
 include erlang.mk
-
-rel/sys.config: | rel/sys.config.example
-	cp $| $@
 
 ERL_LIBS := $(ERL_LIBS):$(CURDIR)
 
