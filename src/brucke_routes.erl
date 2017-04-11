@@ -454,7 +454,7 @@ duplicated_source_test() ->
                 , {downstream_topic, <<"topic_3">>}
                 ],
   DupeRoute = [ {upstream_client, client_1}
-              , {upstream_topics, topic_1}
+              , {upstream_topics, <<"topic_1">>}
               , {downstream_client, client_1}
               , {downstream_topic, <<"topic_3">>}
               ],
@@ -509,6 +509,12 @@ all_sorted() -> lists:keysort(#route.upstream, all()).
 
 topics_test() ->
   ?assertEqual([<<"topic_1">>], topics(topic_1)).
+
+lookup_skipped(UpstreamClientId, UpstreamTopic) ->
+  case ets:lookup(?ETS, {UpstreamClientId, UpstreamTopic}) of
+    [Route = #route{status = skipped}] -> Route;
+    _ -> false
+  end.
 
 -endif.
 

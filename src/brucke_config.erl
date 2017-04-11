@@ -54,8 +54,6 @@
 
 -include("brucke_int.hrl").
 
--define(CONFIG_FILE_ENV_VAR_NAME, "BRUCKE_CONFIG_FILE").
-
 -define(ETS, ?MODULE).
 
 -type config_tag() :: atom() | string() | binary().
@@ -68,7 +66,7 @@
 
 -spec init() -> ok | no_return().
 init() ->
-  File = get_file_path_from_config(),
+  File = assert_file(brucke_app:config_file_path()),
   yamerl_app:set_param(node_mods, [yamerl_node_erlang_atom]),
   try
     [Configs] = yamerl_constr:file(File, [{erlang_atom_autodetection, true}]),
@@ -109,30 +107,6 @@ all_clients() ->
 all_routes() -> brucke_routes:all().
 
 %%%_* Internal functions =======================================================
-
--spec get_file_path_from_config() -> filename() | no_return().
-get_file_path_from_config() ->
-  case os:getenv("BRUCKE_CONFIG_FILE") of
-    false ->
-      case application:get_env(brucke, config_file) of
-        {ok, Path0} ->
-          Path = assert_file(Path0),
-          lager:info("Using brucke config file from application environment "
-                     "'config_file': ~p", [Path]),
-          Path;
-        ?undef ->
-          lager:emergency("Brucke config file not found! "
-                          "It can either be specified by "
-                          "environment variable ~s, "
-                          "or in ~p application environment (sys.config)",
-                          [?CONFIG_FILE_ENV_VAR_NAME, ?APPLICATION]),
-          exit(brucke_config_not_found)
-      end;
-    Path ->
-      lager:info("Using brucke config file from OS env ~s: ~s",
-                 [?CONFIG_FILE_ENV_VAR_NAME, Path]),
-      assert_file(Path)
-  end.
 
 -spec assert_file(filename() | {priv, filename()}) -> filename() | no_return().
 assert_file({priv, Path}) ->

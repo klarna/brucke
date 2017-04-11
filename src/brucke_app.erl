@@ -21,7 +21,29 @@
         , stop/1
         ]).
 
+-export([ graphite_root_path/0
+        , graphite_host/0
+        , graphite_port/0
+        , healthcheck_enabled/0
+        , healthcheck_port/0
+        , config_file_path/0
+        ]).
+
 -include("brucke_int.hrl").
+
+%% App env getters
+
+graphite_root_path() -> app_env(graphite_root_path).
+
+graphite_host() -> app_env(graphite_host).
+
+graphite_port() -> app_env(graphite_port).
+
+healthcheck_enabled() -> app_env(healthcheck).
+
+healthcheck_port() -> app_env(healthcheck_port).
+
+config_file_path() -> app_env(config_file_path).
 
 %% @private Application callback.
 start(_Type, _Args) ->
@@ -34,11 +56,12 @@ start(_Type, _Args) ->
     Err -> Err
   end.
 
-%% @doc Application callback.
+%% @private Application callback.
 stop(_State) ->
   ok.
 
 %% @private
+
 maybe_update_env() ->
   VarSpecs =
     [ {"BRUCKE_GRAPHITE_ROOT_PATH", graphite_root_path, binary}
@@ -47,6 +70,7 @@ maybe_update_env() ->
     , {"BRUCKE_HEALTHCHECK", healthcheck, boolean}
     , {"BRUCKE_HEALTHCHECK_PORT", healthcheck_port, integer}
     , {"BRUCKE_FILTER_EBIN_PATHS", filter_ebin_dirs, fun parse_paths/1}
+    , {"BRUCKE_CONFIG_FILE", config_file_path, string}
     ],
   maybe_update_env(VarSpecs).
 
@@ -88,6 +112,10 @@ parse_paths(Paths) -> string:tokens(Paths, ":,").
 add_filter_ebin_dirs() ->
   Dirs = application:get_env(?APPLICATION, filter_ebin_dirs, []),
   ok = code:add_pathsa(Dirs).
+
+app_env(Key) ->
+  {ok, Value} = application:get_env(?APPLICATION, Key),
+  Value.
 
 %%%_* Emacs ====================================================================
 %%% Local Variables:
