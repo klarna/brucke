@@ -1,5 +1,5 @@
 # Brucke - Inter-cluster bridge of kafka topics
-Brucke is a kafka consumer+producer powered by [Brod](https://github.com/klarna/brod)
+Brucke is a Inter-cluster bridge of kafka topics powered by [Brod](https://github.com/klarna/brod)
 
 Brucke bridges messages from upstream topic to downstream topic with configurable re-partitionning strategy.
 
@@ -7,7 +7,7 @@ Brucke bridges messages from upstream topic to downstream topic with configurabl
 
 A brucke config file is a YAML file.
 
-Config file path should be set in config_file variable of brucke app config, or via BRUCKE_CONFIG_FILE OS env variable.
+Config file path should be set in config_file variable of brucke app config, or via `BRUCKE_CONFIG_FILE` OS env variable.
 
 Cluster names and client names must comply to erlang atom syntax.
 
@@ -35,7 +35,7 @@ Cluster names and client names must comply to erlang atom syntax.
 NOTE: For compacted topics, strict_p2p is the only choice.
 
 - key_hash: hash the message key to downstream partition number
-- strict_p2p: strictly map the upstream partition number to downstream partition number, worker will refuse to start if 
+- strict_p2p: strictly map the upstream partition number to downstream partition number, worker will refuse to start if
 upstream and downstream topic has different number of partitions
 - random: randomly distribute upstream messages to downstream partitions
 
@@ -75,7 +75,8 @@ Alternatively, you can use corresponding OS env variables:
 - BRUCKE_HEALTHCHECK
 - BRUCKE_HEALTHCHECK_PORT
 
-After that you can query healthcheck on `http://Host:8080/healthckeck`.
+After that you can query healthcheck on `http://Host:8080/healthcheck`.  
+
 Response:
 
     {
@@ -128,6 +129,5 @@ Example:
             }
         ],
         "routes": [ ]
-
     }
 
