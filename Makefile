@@ -2,32 +2,40 @@ PROJECT = brucke
 PROJECT_DESCRIPTION = Inter-cluster bridge of kafka topics
 PROJECT_VERSION = $(shell cat VSN)
 
-DEPS = lager brod yamerl graphiter cowboy jsone
+all: compile
 
-dep_lager = hex 3.2.4
-dep_brod = hex 2.3.6
-dep_yamerl = hex 0.4.0
-dep_graphiter = hex 1.0.5
-dep_jsone = hex 1.4.3
-dep_cowboy = hex 1.1.2
+rebar ?= $(shell which rebar3)
+rebar_cmd = $(rebar) $(profile:%=as %)
 
-TEST_DEPS = meck
+compile:
+	@$(rebar_cmd) compile
 
-EUNIT_OPTS = verbose
-ERLC_OPTS = -Werror +warn_unused_vars +warn_shadow_vars +warn_unused_import +warn_obsolete_guard +debug_info
-CT_OPTS = -ct_use_short_names true
-COVER = true
+xref:
+	@$(rebar_cmd) xref
 
-include erlang.mk
+clean:
+	@$(rebar_cmd) clean
 
-ERL_LIBS := $(ERL_LIBS):$(CURDIR)
+eunit:
+	@$(rebar_cmd) eunit -v
 
-MORE_ERLC_OPTS = +'{parse_transform, lager_transform}'
+ct:
+	@$(rebar_cmd) ct
 
-ERLC_OPTS += $(MORE_ERLC_OPTS)
-TEST_ERLC_OPTS += $(MORE_ERLC_OPTS)
+edoc: profile=edown
+edoc:
+	@$(rebar_cmd) edoc
 
-t: eunit ct
+shell:
+	-@$(rebar_cmd) shell
+
+dialyze: compile
+	@$(rebar_cmd) dialyzer
+
+cover:
+	@$(rebar_cmd) cover -v
+
+t: eunit ct cover
 	./scripts/cover-summary.escript eunit.coverdata ct.coverdata
 
 test-env:
@@ -51,5 +59,5 @@ vsn-check:
 	$(verbose) ./scripts/vsn-check.sh $(PROJECT_VERSION)
 
 hex-publish: distclean
-	$(verbose) rebar3 hex publish
+	$(rebar) hex publish
 
