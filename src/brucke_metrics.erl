@@ -39,7 +39,7 @@ init() ->
     undefined ->
       %% not configured, do not start anything
       ok;
-    {ok, Host} ->
+    Host ->
       Opts0 = [{prefix, iolist_to_binary(Prefix)}, {host, Host}],
       Opts = case application:get_env(?APPLICATION, graphite_port) of
                {ok, Port} -> [{port, Port} | Opts0];
