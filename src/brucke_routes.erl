@@ -151,6 +151,7 @@ convert_to_route_record(Route) ->
    , repartitioning_strategy := RepartitioningStrategy
    , max_partitions_per_group_member := MaxPartitionsPerGroupMember
    , filter_module := FilterModule
+   , filter_init_arg := FilterInitArg
    , default_begin_offset := BeginOffset
    , compression := Compression
    } = Route,
@@ -160,6 +161,7 @@ convert_to_route_record(Route) ->
     #{ repartitioning_strategy => RepartitioningStrategy
      , max_partitions_per_group_member => MaxPartitionsPerGroupMember
      , filter_module => FilterModule
+     , filter_init_arg => FilterInitArg
      , producer_config => ProducerConfig
      , consumer_config => ConsumerConfig
      },
@@ -179,7 +181,8 @@ defaults() ->
    , max_partitions_per_group_member => ?MAX_PARTITIONS_PER_GROUP_MEMBER
    , default_begin_offset            => ?DEFAULT_DEFAULT_BEGIN_OFFSET
    , compression                     => ?DEFAULT_COMPRESSION
-   , filter_module                   => ?DEFAULT_FILTER
+   , filter_module                   => ?DEFAULT_FILTER_MODULE
+   , filter_init_arg                 => ?DEFAULT_FILTER_INIT_ARG
    }.
 
 schema() ->
@@ -237,6 +240,7 @@ schema() ->
                     [Module, What])
             end
         end
+    , filter_init_arg => fun(_, _Arg) -> true end
    }.
 
 -spec apply_route_schema(raw_route(), #{}, #{}, #{}, validation_result()) ->

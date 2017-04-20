@@ -93,8 +93,6 @@ init(Route) ->
 handle_info({post_init, #route{options = Options} = Route}, State) ->
   {UpstreamClientId, UpstreamTopic} = Route#route.upstream,
   {DownstreamClientId, DownstreamTopic} = Route#route.downstream,
-  #{filter_module := FilterModule} = Options,
-  ok = brucke_filter:init(FilterModule, UpstreamTopic, DownstreamTopic),
   GroupConfig = [{offset_commit_policy, commit_to_kafka_v2}
                 ,{offset_commit_interval_seconds, 10}
                 ],

@@ -30,6 +30,7 @@
 -define(UNACKED(CallRef, Offset), {CallRef, Offset, unacked}).
 -define(ACKED(CallRef, Offset), {CallRef, Offset, acked}).
 -type pending_acks() :: [{brod_call_ref() | ignored, offset(), unacked | acked}].
+-type cb_state() :: brucke_filter:cb_state().
 
 -define(SUBSCRIBE_RETRY_LIMIT, 3).
 -define(SUBSCRIBE_RETRY_SECONDS, 2).
@@ -39,7 +40,14 @@
 -spec start_link(route(), partition(), ?undef | offset()) -> {ok, pid()}.
 start_link(Route, UpstreamPartition, BeginOffset) ->
   Parent = self(),
-  #route{upstream = {UpstreamClientId, _UpstreamTopic}} = Route,
+  #route{ upstream = {UpstreamClientId, UpstreamTopic}
+        , options = Options
+        } = Route,
+  #{ filter_module := FilterModule
+   , filter_init_arg := InitArg
+   } = Options,
+  {ok, CbState} = brucke_filter:init(FilterModule, UpstreamTopic,
+                                     UpstreamPartition, InitArg),
   UpstreamClusterName = brucke_config:get_cluster_name(UpstreamClientId),
   State = #{ route              => Route
            , upstream_partition => UpstreamPartition
@@ -47,6 +55,7 @@ start_link(Route, UpstreamPartition, BeginOffset) ->
            , consumer           => subscribing
            , pending_acks       => []
            , upstream_cluster   => UpstreamClusterName
+           , filter_cb_state    => CbState
            },
   Pid = proc_lib:spawn_link(fun() -> loop(State) end),
   Pid ! {subscribe, BeginOffset, 0},
@@ -124,8 +133,9 @@ handle_message_set(#{ route              := Route
   do_handle_message_set(NewState, MsgSet, RouteOptions).
 
 %% @private
-do_handle_message_set(#{ route        := Route
+do_handle_message_set(#{ route := Route
                        , pending_acks := PendingAcks
+                       , filter_cb_state := CbState
                        } = State, MsgSet, RouteOptions) ->
   RepartStrategy = brucke_lib:get_repartitioning_strategy(RouteOptions),
   #{filter_module := FilterModule} = RouteOptions,
@@ -138,8 +148,9 @@ do_handle_message_set(#{ route        := Route
         } = Route,
   PartitionOrFun = maybe_repartition(Partition, RepartStrategy),
   FilterFun =
-    fun(Offset, Key, Value) ->
-        brucke_filter:filter(FilterModule, Topic, Partition, Offset, Key, Value)
+    fun(Offset, Key, Value, CbStateIn) ->
+        brucke_filter:filter(FilterModule, Topic, Partition, Offset,
+                             Key, Value, CbStateIn)
     end,
   ProduceFun =
     fun(Key, Value) ->
@@ -149,20 +160,28 @@ do_handle_message_set(#{ route        := Route
                                      Key, Value),
         CallRef
     end,
-  NewPendingAcks = produce(FilterFun, ProduceFun, Messages, []),
-  handle_acked(State#{pending_acks := PendingAcks ++ NewPendingAcks}).
+  {NewPendingAcks, NewCbState} =
+    produce(FilterFun, ProduceFun, Messages, [], CbState),
+  handle_acked(State#{ pending_acks := PendingAcks ++ NewPendingAcks
+                     , filter_cb_state := NewCbState
+                     }).
 
 %% @private
--spec produce(fun((offset(), kafka_key(), kafka_value()) -> brucke_filter:filter_result()),
+-spec produce(fun((offset(), kafka_key(), kafka_value(), cb_state()) ->
+                    brucke_filter:filter_return()),
               fun((kafka_key(), kafka_value()) -> brod_call_ref()),
-              [#kafka_message{}], pending_acks()) -> pending_acks().
-produce(_FilterFun, _ProduceFun, [], PendingAcks) ->
-  lists:reverse(PendingAcks);
-produce(FilterFun, ProduceFun, [#kafka_message{offset = Offset,
-                                               key = Key,
-                                               value = Value} | Rest], PendingAcks) ->
+              [#kafka_message{}], pending_acks(),
+              cb_state()) -> {pending_acks(), cb_state()}.
+produce(_FilterFun, _ProduceFun, [], PendingAcks, CbState) ->
+  {lists:reverse(PendingAcks), CbState};
+produce(FilterFun, ProduceFun,
+        [#kafka_message{offset = Offset,
+                        key = Key,
+                        value = Value} | Rest],
+        PendingAcks0, CbState0) ->
+  {FilterResult, CbState} = FilterFun(Offset, Key, Value, CbState0),
   NewPending =
-    case FilterFun(Offset, Key, Value) of
+    case FilterResult of
       true ->
         ?UNACKED(ProduceFun(Key, Value), Offset);
       {NewKey, NewValue} ->
@@ -170,7 +189,8 @@ produce(FilterFun, ProduceFun, [#kafka_message{offset = Offset,
       false ->
         ?ACKED(ignored, Offset)
     end,
-  produce(FilterFun, ProduceFun, Rest, [NewPending | PendingAcks]).
+  PendingAcks = [NewPending | PendingAcks0],
+  produce(FilterFun, ProduceFun, Rest, PendingAcks, CbState).
 
 %% @private
 -spec handle_produce_reply(state(), #brod_produce_reply{}) -> state().

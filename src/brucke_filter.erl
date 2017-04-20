@@ -16,25 +16,30 @@
 
 -module(brucke_filter).
 
--export([ init/2
-        , init/3
-        , filter/5
+-export([ init/3
+        , init/4
         , filter/6
+        , filter/7
         ]).
 
--export_type([ filter_result/0
+-export_type([ cb_state/0
+             , filter_result/0
+             , filter_return/0
              ]).
 
 -include("brucke_int.hrl").
 -include_lib("brod/include/brod.hrl").
 
+-type cb_state() :: term().
 -type filter_result() :: boolean() | {kafka_key(), kafka_value()}.
+-type filter_return() :: {filter_result(), cb_state()}.
 
-%% Called when route worker (`brucke_member') start/restart.
-%% The assumption now is that the callback should be stateless.
-%% This is why there is no support for callback state returned.
-%% i.e. the filter is designed like a `lists:filtermap' but not `lists:foldl'.
--callback init(Upstream :: kafka_topic(), Downstream :: kafka_topic()) -> ok.
+-define(DEFAULT_STATE, []).
+
+%% Called when route worker (`brucke_subscriber') start/restart.
+-callback init(UpstreamTopic :: kafka_topic(),
+               UpstreamPartition :: kafka_partition(),
+               InitArg :: term()) -> {ok, cb_state()}.
 
 %% Called by assignment worker (`brucke_subscriber') for each message.
 %% Return value implications:
@@ -45,27 +50,31 @@
                  Partition :: kafka_partition(),
                  Offset :: kafka_offset(),
                  Key :: kafka_key(),
-                 Value :: kafka_value()) -> filter_result().
+                 Value :: kafka_value(),
+                 CbState :: cb_state()) -> filter_return().
 
 %% @doc Call callback module's init API
--spec init(module(), kafka_topic(), kafka_topic()) -> ok.
-init(Module, UpstreamTopic, DownstreamTopic) ->
-  Module:init(UpstreamTopic, DownstreamTopic).
+-spec init(module(), kafka_topic(), kafka_partition(), term()) ->
+        {ok, cb_state()}.
+init(Module, UpstreamTopic, UpstreamPartition, InitArg) ->
+  Module:init(UpstreamTopic, UpstreamPartition, InitArg).
 
 %% @doc The default filter does not do anything special.
--spec init(kafka_topic(), kafka_topic()) -> ok.
-init(_UpstreamTopic, _DownstreamTopic) -> ok.
+-spec init(kafka_topic(), kafka_partition(), term()) -> ok.
+init(_UpstreamTopic, _UpstreamPartition, _InitArg) ->
+  {ok, ?DEFAULT_STATE}.
 
 %% @doc Filter message set.
 -spec filter(module(), kafka_topic(), kafka_partition(), kafka_offset(),
-             kafka_key(), kafka_value()) -> filter_result().
-filter(Module, Topic, Partition, Offset, Key, Value) ->
-  Module:filter(Topic, Partition, Offset, Key, Value).
+             kafka_key(), kafka_value(), cb_state()) -> filter_return().
+filter(Module, Topic, Partition, Offset, Key, Value, CbState) ->
+  Module:filter(Topic, Partition, Offset, Key, Value, CbState).
 
 %% @doc The default filter does nothing.
 -spec filter(kafka_topic(), kafka_partition(), kafka_offset(),
-             kafka_key(), kafka_value()) -> filter_result().
-filter(_Topic, _Partition, _Offset, _Key, _Value) -> true.
+             kafka_key(), kafka_value(), cb_state()) -> filter_result().
+filter(_Topic, _Partition, _Offset, _Key, _Value, ?DEFAULT_STATE) ->
+  {true, ?DEFAULT_STATE}.
 
 %%%_* Emacs ====================================================================
 %%% Local Variables:
