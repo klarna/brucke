@@ -26,11 +26,6 @@
         , suite/0
         ]).
 
-%% brucke_filter behaviour callback
--export([ init/2
-        , filter/5
-        ]).
-
 %% Test cases
 -export([ t_basic/1
         , t_filter/1
@@ -80,15 +75,6 @@ all() -> [F || {F, _A} <- module_info(exports),
                     "t_" ++ _ -> true;
                     _         -> false
                   end].
-
-init(_UpstreamTopic, _DownstreamTopic) -> ok.
-
-filter(_Topic, _Partition, _Offset, Key, Value) ->
-  case binary_to_integer(Key) rem 3 of
-    0 -> true; %% as is
-    1 -> false; %% discard
-    2 -> {Key, bin(int(Value) + 1)} %% transform
-  end.
 
 %%%_* Test functions ===========================================================
 
@@ -164,7 +150,6 @@ uniq_int() ->
   (M * 1000000 + S) * 1000000 + Micro.
 
 bin(X) -> integer_to_binary(X).
-
 int(B) -> binary_to_integer(B).
 
 %%%_* Emacs ====================================================================

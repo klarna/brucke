@@ -49,6 +49,7 @@ routes:
       - brucke-filter-test-upstream
     downstream_topic: brucke-filter-test-downstream
     repartitioning_strategy: strict_p2p
-    filter_module: brucke_SUITE
+    filter_module: brucke_test_filter
+    filter_init_arg: ""
     default_begin_offset: earliest
 
