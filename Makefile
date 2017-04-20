@@ -56,8 +56,8 @@ rpm: all
 			rpm/brucke.spec
 
 vsn-check:
-	$(verbose) ./scripts/vsn-check.sh $(PROJECT_VERSION)
+	@./scripts/vsn-check.sh $(PROJECT_VERSION)
 
 hex-publish: distclean
-	$(rebar) hex publish
+	$(rebar_cmd) hex publish
 
