@@ -82,6 +82,8 @@ default_producer_config() ->
   [ {max_linger_ms, 2000} %% 2 seconds
   , {max_linger_count, 100}
   , {max_batch_size, 800000} %% 800K
+  , {ack_timeout, 10000} %% 10 seconds
+  , {retry_backoff_ms, 1000}
   ].
 
 %%%_* Emacs ====================================================================
