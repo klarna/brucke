@@ -67,7 +67,6 @@ start_link(Route, UpstreamPartition, BeginOffset) ->
            },
   Pid = proc_lib:spawn_link(fun() -> loop(State) end),
   Pid ! {subscribe, BeginOffset, 0},
-  _ = erlang:send_after(?CHECK_PRODUCER_DELAY, self(), ?CHECK_PRODUCER_MSG),
   {ok, Pid}.
 
 stop(Pid) when is_pid(Pid) ->
@@ -83,6 +82,7 @@ stop(Pid) when is_pid(Pid) ->
 %% @private
 -spec loop(state()) -> no_return().
 loop(State) ->
+  _ = erlang:send_after(?CHECK_PRODUCER_DELAY, self(), ?CHECK_PRODUCER_MSG),
   receive
     Msg ->
       ?MODULE:loop(handle_msg(State, Msg))
