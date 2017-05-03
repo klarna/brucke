@@ -271,16 +271,18 @@ remove_acked_header([?ACKED(_CallRef, Offset) | Rest], _LastOffset) ->
 %% @private Return 'true' if ALL producers of unacked requests are still alive.
 -spec check_producer(state()) -> state() | no_return().
 check_producer(#{pending_acks := Pendings} = State) ->
-  _ = erlang:send_after(?CHECK_PRODUCER_DELAY, self(), ?CHECK_PRODUCER_MSG),
   Pred = fun(?UNACKED(#brod_call_ref{callee = ProducerPid}, _Offset)) ->
              erlang:is_process_alive(ProducerPid);
             (_) ->
              true
          end,
-  case lists:all(Pred, Pendings) of
-    true  -> State;
-    false -> erlang:exit(producer_down)
-  end.
+  NewState =
+    case lists:all(Pred, Pendings) of
+      true  -> State;
+      false -> erlang:exit(producer_down)
+    end,
+  _ = erlang:send_after(?CHECK_PRODUCER_DELAY, self(), ?CHECK_PRODUCER_MSG),
+  NewState.
 
 %% @private
 -spec handle_consumer_down(state(), pid()) -> state().

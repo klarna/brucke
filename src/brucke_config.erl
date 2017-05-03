@@ -319,28 +319,28 @@ do_validate_client_config(ClientId, Other) ->
 validate_ssl_option(_ClientId, true) ->
   true;
 validate_ssl_option(ClientId, SslOptions) ->
-  lists:foldl(
-    fun(OptName, OptIn) ->
-      validate_ssl_option(ClientId, OptIn, OptName)
-    end, SslOptions, [ {mandatory, cacertfile}
-                     , {optional, certfile}
-                     , {optional, keyfile}
-                     ]).
+  Options =
+    lists:foldl(
+      fun(OptName, OptIn) ->
+          validate_ssl_option(ClientId, OptIn, OptName)
+      end, SslOptions, [ cacertfile
+                       , certfile
+                       , keyfile
+                       ]),
+  case Options =:= [] of
+    true -> true;
+    false -> Options
+  end.
 
 %% @private
 -spec validate_ssl_option(client_id(), list(),
-                          {mandatory | optional,
-                           cacertfile | certfile | keyfile}) -> list() | none().
-validate_ssl_option(ClientId, SslOptions, {MandatoryOr, OptName}) ->
+                          cacertfile | certfile | keyfile) -> list() | none().
+validate_ssl_option(ClientId, SslOptions, OptName) ->
   case lists:keyfind(OptName, 1, SslOptions) of
     {_, Filename0} ->
       Filename = validate_ssl_file(ClientId, Filename0),
       lists:keyreplace(OptName, 1, SslOptions, {OptName, Filename});
-    false when MandatoryOr =:= mandatory ->
-      lager:emergency("ssl option '~p' is not found for client ~p",
-                      [OptName, ClientId]),
-      exit(missing_ssl_option);
-    false when MandatoryOr =:= optional ->
+    false ->
       SslOptions
   end.
 
@@ -369,8 +369,6 @@ validate_ssl_file(ClientId, Filename) ->
 -include_lib("eunit/include/eunit.hrl").
 
 validate_ssl_files_test() ->
-  ?assertException(exit, missing_ssl_option,
-                   validate_ssl_option(client_id, [])),
   %% cacertfile is mandatory, and bad file should trigger exception
   ?assertException(exit, bad_ssl_file,
                    validate_ssl_option(client_id,
@@ -392,6 +390,8 @@ validate_ssl_files_test() ->
                                     {keyfile, "priv/ssl/client.key"},
                                     {certfile, "priv/ssl/client.crt"}
                                    ])),
+  ?assertEqual(true,
+               validate_ssl_option(client_id, [])),
   ?assertEqual(true,
                validate_ssl_option(client_id, true)).
 
