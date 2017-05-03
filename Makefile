@@ -5,7 +5,7 @@ PROJECT_VERSION = $(shell cat VSN)
 DEPS = lager brod yamerl graphiter cowboy jsone
 
 dep_lager = hex 3.2.4
-dep_brod = hex 2.3.6
+dep_brod = hex 2.3.7
 dep_yamerl = hex 0.4.0
 dep_graphiter = hex 1.0.5
 dep_jsone = hex 1.4.3
