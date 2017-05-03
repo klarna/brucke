@@ -35,6 +35,14 @@
 -define(SUBSCRIBE_RETRY_LIMIT, 3).
 -define(SUBSCRIBE_RETRY_SECONDS, 2).
 
+%% Because the upstream messages might be dispatched to
+%% different downstream partitions, there is no single downstream
+%% producer process to monitor.
+%% Instead, we periodically send a loop-back message to check if
+%% the producer pids are still alive
+-define(CHECK_PRODUCER_DELAY, 30000).
+-define(CHECK_PRODUCER_MSG, check_producer).
+
 %%%_* APIs =====================================================================
 
 -spec start_link(route(), partition(), ?undef | offset()) -> {ok, pid()}.
@@ -59,6 +67,7 @@ start_link(Route, UpstreamPartition, BeginOffset) ->
            },
   Pid = proc_lib:spawn_link(fun() -> loop(State) end),
   Pid ! {subscribe, BeginOffset, 0},
+  _ = erlang:send_after(?CHECK_PRODUCER_DELAY, self(), ?CHECK_PRODUCER_MSG),
   {ok, Pid}.
 
 stop(Pid) when is_pid(Pid) ->
@@ -71,20 +80,28 @@ stop(Pid) when is_pid(Pid) ->
 
 %%%_* Internal Functions =======================================================
 
+%% @private
 -spec loop(state()) -> no_return().
 loop(State) ->
   receive
-    {subscribe, BeginOffset, Count} ->
-      ?MODULE:loop(subscribe(State, BeginOffset, Count));
-    {Pid, #kafka_message_set{} = MsgSet} ->
-      ?MODULE:loop(handle_message_set(State, Pid, MsgSet));
-    #brod_produce_reply{} = Reply ->
-      ?MODULE:loop(handle_produce_reply(State, Reply));
-    {'DOWN', _Ref, process, Pid, _Reason} ->
-      ?MODULE:loop(handle_consumer_down(State, Pid));
-    Unknown ->
-      erlang:exit({unknown_message, Unknown})
+    Msg ->
+      ?MODULE:loop(handle_msg(State, Msg))
   end.
+
+%% @private
+-spec handle_msg(state(), term()) -> state() | no_return().
+handle_msg(State, {subscribe, BeginOffset, Count}) ->
+  subscribe(State, BeginOffset, Count);
+handle_msg(State, ?CHECK_PRODUCER_MSG) ->
+  check_producer(State);
+handle_msg(State, {Pid, #kafka_message_set{} = MsgSet}) ->
+  handle_message_set(State, Pid, MsgSet);
+handle_msg(State, #brod_produce_reply{} = Reply) ->
+  handle_produce_reply(State, Reply);
+handle_msg(State, {'DOWN', _Ref, process, Pid, _Reason}) ->
+  handle_consumer_down(State, Pid);
+handle_msg(_State, Unknown) ->
+  erlang:exit({unknown_message, Unknown}).
 
 %% @private
 -spec subscribe(state(), offset(), non_neg_integer()) -> state() | no_return().
@@ -108,7 +125,7 @@ subscribe(#{ route              := Route
       State#{consumer := Pid};
     {error, _Reason} when RetryCount < ?SUBSCRIBE_RETRY_LIMIT ->
       Msg = {subscribe, BeginOffset, RetryCount+1},
-      erlang:send_after(timer:seconds(?SUBSCRIBE_RETRY_SECONDS), self(), Msg),
+      _ = erlang:send_after(timer:seconds(?SUBSCRIBE_RETRY_SECONDS), self(), Msg),
       State;
     {error, Reason} ->
       exit({failed_to_subscribe, Reason})
@@ -250,6 +267,22 @@ remove_acked_header([?UNACKED(_CallRef, _Offset) | _] = Pending, LastOffset) ->
   {LastOffset, Pending};
 remove_acked_header([?ACKED(_CallRef, Offset) | Rest], _LastOffset) ->
   remove_acked_header(Rest, Offset).
+
+%% @private Return 'true' if ALL producers of unacked requests are still alive.
+-spec check_producer(state()) -> state() | no_return().
+check_producer(#{pending_acks := Pendings} = State) ->
+  Pred = fun(?UNACKED(#brod_call_ref{callee = ProducerPid}, _Offset)) ->
+             erlang:is_process_alive(ProducerPid);
+            (_) ->
+             true
+         end,
+  NewState =
+    case lists:all(Pred, Pendings) of
+      true  -> State;
+      false -> erlang:exit(producer_down)
+    end,
+  _ = erlang:send_after(?CHECK_PRODUCER_DELAY, self(), ?CHECK_PRODUCER_MSG),
+  NewState.
 
 %% @private
 -spec handle_consumer_down(state(), pid()) -> state().

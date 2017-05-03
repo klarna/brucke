@@ -303,8 +303,9 @@ validate_client_config(ClientId, Config) ->
                   [ClientId, Config]),
   exit(bad_client_config).
 
+%% @private
 do_validate_client_config(ClientId, {ssl, Options}) ->
-  {ssl, validate_ssl_files(ClientId, Options)};
+  {ssl, validate_ssl_option(ClientId, Options)};
 do_validate_client_config(_ClientId, {_, _} = ConfigEntry) ->
   ConfigEntry;
 do_validate_client_config(ClientId, Other) ->
@@ -312,32 +313,38 @@ do_validate_client_config(ClientId, Other) ->
                   "expecting kv-pair\nGot:~p", [ClientId, Other]),
   exit(bad_client_config_entry).
 
--spec validate_ssl_files(client_id(), list()) -> list() | none().
-validate_ssl_files(ClientId, SslOptions) ->
-  lists:foldl(
-    fun(OptName, OptIn) ->
-      validate_ssl_files(ClientId, OptIn, OptName)
-    end, SslOptions, [ {mandatory, cacertfile}
-                     , {optional, certfile}
-                     , {optional, keyfile}
-                     ]).
+%% @private
+-spec validate_ssl_option(client_id(), true | list()) ->
+        boolean() | list() | none().
+validate_ssl_option(_ClientId, true) ->
+  true;
+validate_ssl_option(ClientId, SslOptions) ->
+  Options =
+    lists:foldl(
+      fun(OptName, OptIn) ->
+          validate_ssl_option(ClientId, OptIn, OptName)
+      end, SslOptions, [ cacertfile
+                       , certfile
+                       , keyfile
+                       ]),
+  case Options =:= [] of
+    true -> true;
+    false -> Options
+  end.
 
--spec validate_ssl_files(client_id(), list(),
-                         {mandatory | optional,
-                          cacertfile | certfile | keyfile}) -> list() | none().
-validate_ssl_files(ClientId, SslOptions, {MandatoryOr, OptName}) ->
+%% @private
+-spec validate_ssl_option(client_id(), list(),
+                          cacertfile | certfile | keyfile) -> list() | none().
+validate_ssl_option(ClientId, SslOptions, OptName) ->
   case lists:keyfind(OptName, 1, SslOptions) of
     {_, Filename0} ->
       Filename = validate_ssl_file(ClientId, Filename0),
       lists:keyreplace(OptName, 1, SslOptions, {OptName, Filename});
-    false when MandatoryOr =:= mandatory ->
-      lager:emergency("ssl option '~p' is not found for client ~p",
-                      [OptName, ClientId]),
-      exit(missing_ssl_option);
-    false when MandatoryOr =:= optional ->
+    false ->
       SslOptions
   end.
 
+%% @private
 -spec validate_ssl_file(client_id(), filename()) -> filename() | none().
 validate_ssl_file(ClientId, Filename) ->
   Path =
@@ -362,29 +369,32 @@ validate_ssl_file(ClientId, Filename) ->
 -include_lib("eunit/include/eunit.hrl").
 
 validate_ssl_files_test() ->
-  ?assertException(exit, missing_ssl_option,
-                   validate_ssl_files(client_id, [])),
   %% cacertfile is mandatory, and bad file should trigger exception
   ?assertException(exit, bad_ssl_file,
-                   validate_ssl_files(client_id,
-                                      [{cacertfile, "no-such-file"}])),
+                   validate_ssl_option(client_id,
+                                       [{cacertfile, "no-such-file"}])),
   %% certfile is optional but providing a bad file should still
   %% raise an exception
   ?assertException(exit, bad_ssl_file,
-                   validate_ssl_files(client_id,
-                                      [{cacertfile, "priv/ssl/ca.crt"},
-                                       {certfile, "no-such-file"}])),
+                   validate_ssl_option(client_id,
+                                       [{cacertfile, "priv/ssl/ca.crt"},
+                                        {certfile, "no-such-file"}])),
   %% OK case
   ?assertMatch([{cacertfile, _}],
-               validate_ssl_files(client_id,
-                                  [{cacertfile, "priv/ssl/ca.crt"}])),
+               validate_ssl_option(client_id,
+                                   [{cacertfile, "priv/ssl/ca.crt"}])),
 
   ?assertMatch([{cacertfile, _}, {keyfile, _}, {certfile, _}],
-               validate_ssl_files(client_id,
-                                  [{cacertfile, "priv/ssl/ca.crt"},
-                                   {keyfile, "priv/ssl/client.key"},
-                                   {certfile, "priv/ssl/client.crt"}
-                                  ])).
+               validate_ssl_option(client_id,
+                                   [{cacertfile, "priv/ssl/ca.crt"},
+                                    {keyfile, "priv/ssl/client.key"},
+                                    {certfile, "priv/ssl/client.crt"}
+                                   ])),
+  ?assertEqual(true,
+               validate_ssl_option(client_id, [])),
+  ?assertEqual(true,
+               validate_ssl_option(client_id, true)).
+
 
 -endif.
 
