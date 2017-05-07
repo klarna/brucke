@@ -32,10 +32,10 @@ init() ->
   ok.
 
 error_hook(Code, _Headers, _Body, Req) ->
-  Method = cowboy_req:method(Req),
-  Version = cowboy_req:version(Req),
-  Path = cowboy_req:path(Req),
-  {Ip, _Port} = cowboy_req:peer(Req),
+  {Method, _} = cowboy_req:method(Req),
+  {Version, _} = cowboy_req:version(Req),
+  {Path, _} = cowboy_req:path(Req),
+  {{Ip, _Port}, _} = cowboy_req:peer(Req),
   Level = log_level(Code),
   lager:log(Level, self(), "~s ~s ~b ~p ~s", [Method, Path, Code, Version, inet:ntoa(Ip)]),
   Req.
