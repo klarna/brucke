@@ -21,11 +21,12 @@ otp_release:
 script:
   - set -e
   - git clone https://github.com/erlang/rebar3.git; cd rebar3; ./bootstrap; cd ..
-  - rebar=./rebar3/rebar3 make vsn-check
-  - rebar=./rebar3/rebar3 make
-  - rebar=./rebar3/rebar3 make xref
-  - rebar=./rebar3/rebar3 make edoc
-  - rebar=./rebar3/rebar3 make test-env
-  - rebar=./rebar3/rebar3 make t
-  - rebar=./rebar3/rebar3 make distclean
+  - export rebar=./rebar3/rebar3
+  - make vsn-check
+  - make
+  - make xref
+  - make edoc
+  - make test-env
+  - make t
+  - make distclean
 
