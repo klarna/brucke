@@ -73,7 +73,8 @@ TOPDIR = /tmp/brucke-rpm
 PWD = $(shell pwd)
 
 .PHONY: rpm
-rpm: all
+rpm: profile=prod
+rpm: rel
 	@rpmbuild -v -bb \
 			--define "_sourcedir $(PWD)" \
 			--define "_builddir $(PWD)" \
