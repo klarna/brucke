@@ -33,7 +33,7 @@ mkdir -p %{buildroot}%{_conf_dir}
 mkdir -p %{buildroot}%{_sysconfdir}/sysconfig
 mkdir -p %{buildroot}%{_bindir}
 mkdir -p %{buildroot}%{_sharedstatedir}/%{_service}
-cp -r _rel/%{_name} %{buildroot}%{_libdir}/
+cp -r _build/prod/rel/%{_name} %{buildroot}%{_libdir}/
 
 cat > %{buildroot}%{_unitdir}/%{_service}.service <<EOF
 [Unit]
@@ -97,7 +97,7 @@ fi
 %{_libdir}/%{_name}
 %attr(0755,root,root) %{_bindir}/%{_service}
 %{_unitdir}/%{_service}.service
-%config(noreplace) %{_conf_dir}/*
 %config(noreplace) %{_sysconfdir}/sysconfig/%{_service}
 %attr(0700,%{_user},%{_group}) %dir %{_sharedstatedir}/%{_service}
 %attr(0755,%{_user},%{_group}) %dir %{_log_dir}
+%attr(0755,%{_user},%{_group}) %dir %{_conf_dir}
