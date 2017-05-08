@@ -105,3 +105,4 @@ fi
 %attr(0755,%{_user},%{_group}) %config(noreplace) %{_conf_dir}/*
 %attr(0700,%{_user},%{_group}) %dir %{_sharedstatedir}/%{_service}
 %attr(0755,%{_user},%{_group}) %dir %{_log_dir}
+%attr(0755,%{_user},%{_group}) %dir %{_conf_dir}
