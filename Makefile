@@ -67,7 +67,7 @@ rel: all
 run: profile=dev
 run:
 	@$(rebar_cmd) release
-	@RELX_REPLACE_OS_VARS=true BRUCKE_LOG_ROOT=log _build/dev/rel/brucke/bin/brucke console
+	@_build/dev/rel/brucke/bin/brucke console
 
 TOPDIR = /tmp/brucke-rpm
 PWD = $(shell pwd)

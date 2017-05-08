@@ -34,6 +34,8 @@ mkdir -p %{buildroot}%{_sysconfdir}/sysconfig
 mkdir -p %{buildroot}%{_bindir}
 mkdir -p %{buildroot}%{_sharedstatedir}/%{_service}
 cp -r _build/prod/rel/%{_name} %{buildroot}%{_libdir}/
+mv %{buildroot}%{_libdir}/%{_name}/releases/%{_version}/sys.config %{buildroot}%{_conf_dir}/
+mv %{buildroot}%{_libdir}/%{_name}/releases/%{_version}/vm.args %{buildroot}%{_conf_dir}/
 
 cat > %{buildroot}%{_unitdir}/%{_service}.service <<EOF
 [Unit]
@@ -54,6 +56,8 @@ EOF
 cat > %{buildroot}%{_sysconfdir}/sysconfig/%{_service} <<EOF
 RUNNER_LOG_DIR=%{_log_dir}
 RELX_REPLACE_OS_VARS=true
+RELX_CONFIG_PATH=%{_conf_dir}/sys.config
+VMARGS_PATH=%{_conf_dir}/vm.args
 BRUCKE_LOG_ROOT=%{_log_dir}
 BRUCKE_CONFIG_FILE=%{_conf_dir}/brucke.config
 PIPE_DIR=%{_sharedstatedir}/%{_service}
@@ -98,6 +102,6 @@ fi
 %attr(0755,root,root) %{_bindir}/%{_service}
 %{_unitdir}/%{_service}.service
 %config(noreplace) %{_sysconfdir}/sysconfig/%{_service}
+%attr(0755,%{_user},%{_group}) %config(noreplace) %{_conf_dir}/*
 %attr(0700,%{_user},%{_group}) %dir %{_sharedstatedir}/%{_service}
 %attr(0755,%{_user},%{_group}) %dir %{_log_dir}
-%attr(0755,%{_user},%{_group}) %dir %{_conf_dir}
