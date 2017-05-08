@@ -16,14 +16,14 @@
 -module(brucke_routes).
 
 -export([ all/0
-        , destroy/0
         , init/1
-        , lookup_ok/2
-        , get_by_status/1]).
+        , health_status/0
+        ]).
 
 -include("brucke_int.hrl").
 
--define(ETS, ?MODULE).
+-define(T_ROUTES, brucke_routes).
+-define(T_DISCARDED_ROUTES, brucke_discarded_routes).
 
 -define(IS_PRINTABLE(C), (C >= 32 andalso C < 127)).
 
@@ -38,9 +38,11 @@
 
 -spec init([raw_route()]) -> ok | no_return().
 init(Routes) when is_list(Routes) ->
-  ets:info(?ETS) =/= ?undef andalso exit({?ETS, already_created}),
-  ?ETS = ets:new(?ETS, [named_table, protected, set,
-                        {keypos, #route.upstream}]),
+  ets:info(?T_ROUTES) =/= ?undef andalso exit({?T_ROUTES, already_created}),
+  ets:info(?T_DISCARDED_ROUTES) =/= ?undef andalso exit({?T_DISCARDED_ROUTES, already_created}),
+  ets:new(?T_ROUTES, [named_table, protected, set,
+                      {keypos, #route.upstream}]),
+  ets:new(?T_DISCARDED_ROUTES, [named_table, protected, bag]),
   try
     ok = do_init_loop(Routes)
   catch C : E ->
@@ -51,19 +53,12 @@ init(Other) ->
   lager:emergency("Expecting list of routes, got ~P", [Other, 9]),
   erlang:exit(bad_routes_config).
 
-%% @doc Lookup in config cache for the message routing destination.
--spec lookup_ok(brod_client_id(), kafka_topic()) -> route() | false.
-lookup_ok(UpstreamClientId, UpstreamTopic) ->
-  case ets:lookup(?ETS, {UpstreamClientId, UpstreamTopic}) of
-    [Route = #route{status = ok}] -> Route;
-    _ -> false
-  end.
-
 %% @doc Delete Ets.
 -spec destroy() -> ok.
 destroy() ->
   try
-    ets:delete(?ETS),
+    ets:delete(?T_ROUTES),
+    ets:delete(?T_DISCARDED_ROUTES),
     ok
   catch error : badarg ->
     ok
@@ -72,12 +67,55 @@ destroy() ->
 %% @doc Get all routes from cache.
 -spec all() -> [route()].
 all() ->
-  get_by_status(ok).
+  ets:tab2list(?T_ROUTES).
 
--spec get_by_status(atom()) -> [route()].
-get_by_status(Status) ->
-  ets:select(?ETS, [{#route{status = '$1', _='_'}, [{'==', '$1', Status}], ['$_']}]).
+%% @doc Routes health status, returns lists of healthy, unhealthy and discarded routes
+-spec health_status() -> maps:map().
+health_status() ->
+  {Healthy0, Unhealthy0} = lists:partition(fun is_healthy/1, all()),
+  MapF =
+    fun(#route{} = R) ->
+        {UpClient, UpTopics} = R#route.upstream,
+        {DnClient, DnTopic} = R#route.downstream,
+        #{upstream => #{endpoints => endpoints_to_maps(brucke_config:get_client_endpoints(UpClient)),
+                        topics => UpTopics},
+          downstream => #{endpoints => endpoints_to_maps(brucke_config:get_client_endpoints(DnClient)),
+                          topic => DnTopic},
+          options => R#route.options};
+       ({raw_route, R}) when is_list(R) ->
+        UpClient = proplists:get_value(upstream_client, R),
+        UpTopics = lists:map(fun(T) -> list_to_binary(T) end, proplists:get_value(upstream_topics, R, [])),
+        DnClient = proplists:get_value(downstream_client, R),
+        DnTopic = list_to_binary(proplists:get_value(downstream_topic, R, "")),
+        Filter = [upstream_client, upstream_topics, downstream_client, downstream_topic, reason],
+        #{upstream => #{endpoints => endpoints_to_maps(brucke_config:get_client_endpoints(UpClient)),
+                        topics => UpTopics},
+          downstream => #{endpoints => endpoints_to_maps(brucke_config:get_client_endpoints(DnClient)),
+                          topic => DnTopic},
+          reason => proplists:get_value(reason, R),
+          options => lists:filter(fun({K, _V}) -> not lists:member(K, Filter);
+                                     (_) -> false
+                                  end, R)};
+       (X) ->
+        lager:error("invalid route specification: ~p", [X]),
+        <<"invalid route specification">>
+    end,
+  Healthy = lists:map(MapF, Healthy0),
+  Unhealthy = lists:map(MapF, Unhealthy0),
+  Discarded = lists:map(MapF, ets:tab2list(?T_DISCARDED_ROUTES)),
+  #{healthy => Healthy, unhealthy => Unhealthy, discarded => Discarded}.
 
+endpoints_to_maps(Endpoints) ->
+  lists:map(fun({Host, Port}) -> #{host => list_to_binary(Host), port => Port} end, Endpoints).
+
+%% @private
+-spec is_healthy(route()) -> boolean().
+is_healthy(#route{upstream = U}) ->
+  Members = brucke_sup:get_group_member_children(U),
+  lists:all(
+    fun({_Id, Pid}) ->
+        is_pid(Pid) andalso brucke_member:is_healthy(Pid)
+    end, Members).
 
 %%%_* Internal functions =======================================================
 
@@ -87,15 +125,15 @@ do_init_loop([RawRoute | Rest]) ->
   try
     case validate_route(RawRoute) of
       {ok, Routes} ->
-        ok = insert_routes(Routes);
+        ets:insert(?T_ROUTES, Routes);
       {error, Reasons} ->
+        ets:insert(?T_DISCARDED_ROUTES, {raw_route, [{reason, Reasons} | RawRoute]}),
         Rs = [[Reason, "\n"] || Reason <- Reasons],
-        mark_inactive_route(RawRoute, skipped, Rs),
         ok = brucke_lib:log_skipped_route_alert(RawRoute, Rs)
     end
   catch throw : Reason ->
+      ets:insert(?T_DISCARDED_ROUTES, {raw_route, [{reason, Reason} | RawRoute]}),
       ReasonTxt = io_lib:format("~p", [Reason]),
-      mark_inactive_route(RawRoute, skipped, ReasonTxt),
       ok = brucke_lib:log_skipped_route_alert(RawRoute, ReasonTxt)
   end,
   do_init_loop(Rest).
@@ -127,21 +165,6 @@ validate_route(RawRoute0) ->
     {error, Reasons} ->
       {error, Reasons}
   end.
-
-%% @private
-mark_inactive_route(Route, Status, Reason) ->
-  MaybeId = proplists:get_value(upstream_client, Route),
-  MaybeTopic = case proplists:get_value(upstream_topics, Route) of
-                undefined -> [undefined];
-                Topics -> topics(Topics)
-              end,
-  lists:foreach(
-    fun(Topic) ->
-      ets:insert(?ETS,
-                 #route{upstream = {MaybeId, Topic}
-                       , status = Status
-                       , reason = list_to_binary(lists:flatten(Reason))})
-    end, MaybeTopic).
 
 convert_to_route_record(Route) ->
   #{ upstream_client := UpstreamClientId
@@ -297,11 +320,6 @@ ensure_no_loopback(UpstreamTopics, DownstreamTopic) ->
     false -> ok
   end.
 
--spec insert_routes([route()]) -> ok.
-insert_routes(Routes) ->
-  true = ets:insert(?ETS, Routes),
-  ok.
-
 -spec is_configured_client_id(brod_client_id()) -> boolean().
 is_configured_client_id(ClientId) ->
   brucke_config:is_configured_client_id(ClientId).
@@ -382,7 +400,7 @@ fmt(Fmt, Args) -> iolist_to_binary(io_lib:format(Fmt, Args)).
 no_ets_leak_test() ->
   clean_setup(),
   L = ets:all(),
-  ?assertNot(lists:member(?ETS, L)),
+  ?assertNot(lists:member(?T_ROUTES, L)),
   try
     init([a|b])
   catch _ : _ ->
@@ -458,18 +476,16 @@ duplicated_source_test() ->
                 , {downstream_topic, <<"topic_3">>}
                 ],
   DupeRoute = [ {upstream_client, client_1}
-              , {upstream_topics, topic_1}
+              , {upstream_topics, <<"topic_1">>}
               , {downstream_client, client_1}
               , {downstream_topic, <<"topic_3">>}
               ],
   ok = init([ValidRoute1, ValidRoute2, DupeRoute]),
-  ?assertMatch([% #route{upstream = {client_1, <<"topic_1">>}},
-                #route{upstream = {client_1, <<"topic_2">>}}
+  ?assertMatch([ #route{upstream = {client_1, <<"topic_1">>}}
+               , #route{upstream = {client_1, <<"topic_2">>}}
                , #route{upstream = {client_1, <<"topic_4">>}}
                ], all_sorted()),
-%  ?assertMatch(#route{upstream = {client_1, <<"topic_1">>}},
-%               lookup_ok(client_1, <<"topic_1">>)),
-  ?assertEqual(false, lookup_ok(client_1, <<"unknown_topic">>)),
+  ?assertEqual([], ets:lookup(?T_ROUTES, {client_1, <<"unknown_topic">>})),
   ok = destroy().
 
 direct_loopback_test() ->

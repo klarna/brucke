@@ -33,30 +33,7 @@ mkdir -p %{buildroot}%{_conf_dir}
 mkdir -p %{buildroot}%{_sysconfdir}/sysconfig
 mkdir -p %{buildroot}%{_bindir}
 mkdir -p %{buildroot}%{_sharedstatedir}/%{_service}
-cp -r _rel/%{_name} %{buildroot}%{_libdir}/
-
-cat > rewrite_sys_config.erl <<EOF
--module(rewrite_sys_config).
-main(_) ->
-  {ok, [Config0]} = file:consult("rel/sys.config"),
-  %% fix lager log root
-  LagerConfig0 = proplists:get_value(lager, Config0, []),
-  LagerConfig  = lists:keystore(log_root, 1, LagerConfig0, {log_root, "%{_log_dir}"}),
-  Config1 = lists:keystore(lager, 1, Config0, {lager, LagerConfig}),
-
-  BruckeConfig0 = proplists:get_value(brucke, Config1, []),
-  BruckeConfig  = lists:keystore(config_file, 1, BruckeConfig0, {config_file, "%{_conf_dir}/brucke.config"}),
-  Config = lists:keystore(brucke, 1, Config1, {brucke, BruckeConfig}),
-
-  file:write_file("rel/sys.config", io_lib:format("~p.~n", [Config])),
-  {ok, _} = file:consult("rel/sys.config"),
-  ok.
-
-EOF
-escript rewrite_sys_config.erl
-rm -f rewrite_sys_config.erl
-%{__install} -p -D -m 0644 rel/sys.config %{buildroot}%{_conf_dir}/sys.config
-%{__install} -p -D -m 0644 rel/vm.args %{buildroot}%{_conf_dir}/vm.args
+cp -r _build/prod/rel/%{_name} %{buildroot}%{_libdir}/
 
 cat > %{buildroot}%{_unitdir}/%{_service}.service <<EOF
 [Unit]
@@ -76,8 +53,9 @@ EOF
 
 cat > %{buildroot}%{_sysconfdir}/sysconfig/%{_service} <<EOF
 RUNNER_LOG_DIR=%{_log_dir}
-RELX_CONFIG_PATH=%{_sysconfdir}/%{_service}/sys.config
-VMARGS_PATH=%{_sysconfdir}/%{_service}/vm.args
+RELX_REPLACE_OS_VARS=true
+BRUCKE_LOG_ROOT=%{_log_dir}
+BRUCKE_CONFIG_FILE=%{_conf_dir}/brucke.config
 PIPE_DIR=%{_sharedstatedir}/%{_service}
 EOF
 
@@ -119,7 +97,7 @@ fi
 %{_libdir}/%{_name}
 %attr(0755,root,root) %{_bindir}/%{_service}
 %{_unitdir}/%{_service}.service
-%config(noreplace) %{_conf_dir}/*
 %config(noreplace) %{_sysconfdir}/sysconfig/%{_service}
 %attr(0700,%{_user},%{_group}) %dir %{_sharedstatedir}/%{_service}
 %attr(0755,%{_user},%{_group}) %dir %{_log_dir}
+%attr(0755,%{_user},%{_group}) %dir %{_conf_dir}

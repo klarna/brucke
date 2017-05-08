@@ -1,5 +1,5 @@
 # Brucke - Inter-cluster bridge of kafka topics
-Brucke is a kafka consumer+producer powered by [Brod](https://github.com/klarna/brod)
+Brucke is a Inter-cluster bridge of kafka topics powered by [Brod](https://github.com/klarna/brod)
 
 Brucke bridges messages from upstream topic to downstream topic with configurable re-partitionning strategy.
 
@@ -7,7 +7,7 @@ Brucke bridges messages from upstream topic to downstream topic with configurabl
 
 A brucke config file is a YAML file.
 
-Config file path should be set in config_file variable of brucke app config, or via BRUCKE_CONFIG_FILE OS env variable.
+Config file path should be set in config_file variable of brucke app config, or via `BRUCKE_CONFIG_FILE` OS env variable.
 
 Cluster names and client names must comply to erlang atom syntax.
 
@@ -35,7 +35,7 @@ Cluster names and client names must comply to erlang atom syntax.
 NOTE: For compacted topics, strict_p2p is the only choice.
 
 - key_hash: hash the message key to downstream partition number
-- strict_p2p: strictly map the upstream partition number to downstream partition number, worker will refuse to start if 
+- strict_p2p: strictly map the upstream partition number to downstream partition number, worker will refuse to start if
 upstream and downstream topic has different number of partitions
 - random: randomly distribute upstream messages to downstream partitions
 
@@ -69,65 +69,183 @@ Operating via systemctl:
     systemctl enable brucke
     systemctl status brucke
 
-# Healthcheck
-To enable http healthcheck handler add `{healthcheck, true}` to sys.config for `brucke` application.  
-Alternatively, you can use corresponding OS env variables:
-- BRUCKE_HEALTHCHECK
-- BRUCKE_HEALTHCHECK_PORT
+# Http endpoint
+Default port is 8080, customize via `http_port` config option or via `BRUCKE_HTTP_PORT` OS env variable.
 
-After that you can query healthcheck on `http://Host:8080/healthckeck`.
-Response:
+    GET /ping
+Returns `pong` if the application is up and running.
+
+    GET /healthcheck
+Responds with status 200 if everything is OK, and 500 if something is not OK.  
+Also returns healthy and unhealthy routes in response body in JSON format.
+
+Example response:
 
     {
-
-        "clients": [
-            {
-                "brod_client_1": "ok"
-            }
-        ],
-        "routes": [
+        "discarded": [
             {
                 "downstream": {
-                    "client_id": "brod_client_1",
-                    "topic": "topic_2"
+                    "endpoints": [
+                        {
+                            "host": "localhost",
+                            "port": 9192
+                        }
+                    ],
+                    "topic": "brucke-filter-test-downstream"
                 },
-                "members": {
-                    "1": "ok"
+                "options": {
+                    "default_begin_offset": "earliest",
+                    "filter_init_arg": [],
+                    "filter_module": "brucke_test_filter",
+                    "repartitioning_strategy": "strict_p2p"
                 },
-                "status": "ok",
+                "reason": [
+                    "filter module brucke_test_filter is not found\nreason:embedded\n"
+                ],
                 "upstream": {
-                    "client_id": "brod_client_1",
-                    "topic": "topic_1"
+                    "endpoints": [
+                        {
+                            "host": "localhost",
+                            "port": 9092
+                        }
+                    ],
+                    "topics": [
+                        "brucke-filter-test-upstream"
+                    ]
                 }
             }
-        ]
-
-    }
-Where:
-__routes__ is a list of `brucke_member_sup` processes.
-__members__ is a list of `brucke_member` processes.
-__consumers__ and __producers__ can be a list or an object with `{"status" : Error}` meaning that no
-consumers/producers can be found for this id and topic.
-__Error__ is a string, f.e. `{"status": "client_down"}`
-
-### Custom query
-To make custom query use parameters in healthcheck request:
-__clients__ - if `false` will return empty clients. Default is `true`.
-__routes__ - if `false` will return empty routes. Default is `true`.
-Example:
-`http://127.0.0.1:8080/health?routes=false`
-
-    {
-
-        "clients": [
+        ],
+        "healthy": [
             {
-                "client_2": "undefined"
+                "downstream": {
+                    "endpoints": [
+                        {
+                            "host": "localhost",
+                            "port": 9192
+                        }
+                    ],
+                    "topic": "brucke-basic-test-downstream"
+                },
+                "options": {
+                    "consumer_config": {
+                        "begin_offset": "earliest"
+                    },
+                    "filter_init_arg": [],
+                    "filter_module": "brucke_filter",
+                    "max_partitions_per_group_member": 12,
+                    "producer_config": {
+                        "compression": "no_compression"
+                    },
+                    "repartitioning_strategy": "strict_p2p"
+                },
+                "upstream": {
+                    "endpoints": [
+                        {
+                            "host": "localhost",
+                            "port": 9092
+                        }
+                    ],
+                    "topics": "brucke-basic-test-upstream"
+                }
             },
             {
-                "client_1": "undefined"
+                "downstream": {
+                    "endpoints": [
+                        {
+                            "host": "localhost",
+                            "port": 9092
+                        }
+                    ],
+                    "topic": "brucke-test-topic-2"
+                },
+                "options": {
+                    "consumer_config": {
+                        "begin_offset": "earliest"
+                    },
+                    "filter_init_arg": [],
+                    "filter_module": "brucke_filter",
+                    "max_partitions_per_group_member": 12,
+                    "producer_config": {
+                        "compression": "no_compression"
+                    },
+                    "repartitioning_strategy": "strict_p2p"
+                },
+                "upstream": {
+                    "endpoints": [
+                        {
+                            "host": "localhost",
+                            "port": 9092
+                        }
+                    ],
+                    "topics": "brucke-test-topic-1"
+                }
+            },
+            {
+                "downstream": {
+                    "endpoints": [
+                        {
+                            "host": "localhost",
+                            "port": 9092
+                        }
+                    ],
+                    "topic": "brucke-test-topic-3"
+                },
+                "options": {
+                    "consumer_config": {
+                        "begin_offset": "latest"
+                    },
+                    "filter_init_arg": [],
+                    "filter_module": "brucke_filter",
+                    "max_partitions_per_group_member": 12,
+                    "producer_config": {
+                        "compression": "no_compression"
+                    },
+                    "repartitioning_strategy": "key_hash"
+                },
+                "upstream": {
+                    "endpoints": [
+                        {
+                            "host": "localhost",
+                            "port": 9092
+                        }
+                    ],
+                    "topics": "brucke-test-topic-2"
+                }
+            },
+            {
+                "downstream": {
+                    "endpoints": [
+                        {
+                            "host": "localhost",
+                            "port": 9192
+                        }
+                    ],
+                    "topic": "brucke-test-topic-1"
+                },
+                "options": {
+                    "consumer_config": {
+                        "begin_offset": "latest"
+                    },
+                    "filter_init_arg": [],
+                    "filter_module": "brucke_filter",
+                    "max_partitions_per_group_member": 12,
+                    "producer_config": {
+                        "compression": "no_compression"
+                    },
+                    "repartitioning_strategy": "random"
+                },
+                "upstream": {
+                    "endpoints": [
+                        {
+                            "host": "localhost",
+                            "port": 9192
+                        }
+                    ],
+                    "topics": "brucke-test-topic-3"
+                }
             }
         ],
-        "routes": [ ]
-
+        "status": "failing",
+        "unhealthy": []
     }
 

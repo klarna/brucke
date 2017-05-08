@@ -1,0 +1,7 @@
+{ok, Bin} = file:read_file("VSN"),
+Version = binary_to_list(binary:replace(Bin, <<"\n">>, <<>>)),
+{relx, RelxOptions0} = lists:keyfind(relx, 1, CONFIG),
+{release, {brucke, _}, Apps} = lists:keyfind(release, 1, RelxOptions0),
+RelxOptions = lists:keystore(release, 1, RelxOptions0, {release, {brucke, Version}, Apps}),
+lists:keystore(relx, 1, CONFIG, {relx, RelxOptions}).
+

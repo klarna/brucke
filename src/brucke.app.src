@@ -1,6 +1,6 @@
 {application,brucke,
              [{description,"Inter-cluster bridge of kafka topics"},
-              {vsn,"1.8.2"},
+              {vsn,"1.9.0"},
               {registered, [brucke_sup]},
               {applications, [kernel, stdlib, lager, brod, yamerl, graphiter, cowboy, jsone]},
               {env,[]},
@@ -10,4 +10,4 @@
               {licenses,["Apache License 2.0"]},
               {links,[{"Github","https://github.com/klarna/brucke"}]},
               {build_tools,["make", "rebar3"]},
-              {files,["src", "rel", "include", "rebar.config", "README.md", "LICENSE", "Makefile", "erlang.mk", "VSN"]}]}.
+              {files,["src", "rel", "include", "rebar.config", "rebar.config.script", "README.md", "LICENSE", "Makefile", "VSN"]}]}.

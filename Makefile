@@ -2,41 +2,79 @@ PROJECT = brucke
 PROJECT_DESCRIPTION = Inter-cluster bridge of kafka topics
 PROJECT_VERSION = $(shell cat VSN)
 
-DEPS = lager brod yamerl graphiter cowboy jsone
+all: compile
 
-dep_lager = hex 3.2.4
-dep_brod = hex 2.3.7
-dep_yamerl = hex 0.4.0
-dep_graphiter = hex 1.0.5
-dep_jsone = hex 1.4.3
-dep_cowboy = hex 1.1.2
+rebar ?= $(shell which rebar3)
+rebar_cmd = $(rebar) $(profile:%=as %)
 
-TEST_DEPS = meck
+.PHONY: compile
+compile:
+	@$(rebar_cmd) compile
 
-EUNIT_OPTS = verbose
-ERLC_OPTS = -Werror +warn_unused_vars +warn_shadow_vars +warn_unused_import +warn_obsolete_guard +debug_info
-CT_OPTS = -ct_use_short_names true
-COVER = true
+.PHONY: xref
+xref:
+	@$(rebar_cmd) xref
 
-include erlang.mk
+.PHONY: clean
+clean:
+	@$(rebar_cmd) clean
 
-ERL_LIBS := $(ERL_LIBS):$(CURDIR)
+.PHONY: distclean
+distclean:
+	@$(rebar_cmd) clean
+	@rm -rf _build
 
-MORE_ERLC_OPTS = +'{parse_transform, lager_transform}'
+.PHONY: eunit
+eunit:
+	@$(rebar_cmd) eunit -v
 
-ERLC_OPTS += $(MORE_ERLC_OPTS)
-TEST_ERLC_OPTS += $(MORE_ERLC_OPTS)
+.PHONY: ct
+ct:
+	@$(rebar_cmd) ct --suite=test/brucke_SUITE
+	@$(rebar_cmd) ct --suite=test/brucke_http_SUITE
 
-t: eunit ct
-	./scripts/cover-summary.escript eunit.coverdata ct.coverdata
+.PHONY: edoc
+edoc: profile=edown
+edoc:
+	@$(rebar_cmd) edoc
 
+.PHONY: shell
+shell: profile=dev
+shell:
+	@$(rebar_cmd) shell --apps brod
+
+.PHONY: dialyze
+dialyze: compile
+	@$(rebar_cmd) dialyzer
+
+.PHONY: cover
+cover:
+	@$(rebar_cmd) cover -v
+
+.PHONY: t
+t: eunit ct cover
+
+.PHONY: test-env
 test-env:
 	./scripts/start-test-brokers.sh
+
+.PHONY: rel
+rel: profile=prod
+rel: all
+	@$(rebar_cmd) release
+
+.PHONY: run
+run: profile=dev
+run:
+	@$(rebar_cmd) release
+	@RELX_REPLACE_OS_VARS=true BRUCKE_LOG_ROOT=log _build/dev/rel/brucke/bin/brucke console
 
 TOPDIR = /tmp/brucke-rpm
 PWD = $(shell pwd)
 
-rpm: all
+.PHONY: rpm
+rpm: profile=prod
+rpm: rel
 	@rpmbuild -v -bb \
 			--define "_sourcedir $(PWD)" \
 			--define "_builddir $(PWD)" \
@@ -47,9 +85,11 @@ rpm: all
 			--define "_version $(PROJECT_VERSION)" \
 			rpm/brucke.spec
 
+.PHONY: vsn-check
 vsn-check:
-	$(verbose) ./scripts/vsn-check.sh $(PROJECT_VERSION)
+	@./scripts/vsn-check.sh $(PROJECT_VERSION)
 
+.PHONY: hex-publish
 hex-publish: distclean
-	$(verbose) rebar3 hex publish
+	$(rebar_cmd) hex publish
 

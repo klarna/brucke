@@ -43,9 +43,9 @@
 suite() -> [{timetrap, {seconds, 30}}].
 
 init_per_suite(Config) ->
-  ok = application:load(brucke),
+  _ = application:load(brucke),
   application:set_env(brucke, config_file, {priv, "brucke.yml"}),
-  {ok, _} = application:ensure_all_started(brucke),
+  _ = application:ensure_all_started(brucke),
   Config.
 
 end_per_suite(_Config) ->

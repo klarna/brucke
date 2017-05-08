@@ -21,6 +21,7 @@
 -behaviour(brod_group_member).
 
 -export([ start_link/1
+        , is_healthy/1
         ]).
 
 %% gen_server callbacks
@@ -57,6 +58,11 @@
 
 -spec start_link(route()) -> {ok, pid()} | {error, any()}.
 start_link(Route) -> gen_server:start_link(?MODULE, Route, []).
+
+%% @doc returns true if all subscribers are up and running
+-spec is_healthy(pid()) -> boolean().
+is_healthy(Pid) ->
+  gen_server:call(Pid, is_healthy).
 
 %%%_* brod_group_member callbacks ==========================================
 
@@ -127,12 +133,16 @@ handle_info({'DOWN', Ref, process, _Pid, _Reason},
             #{downstream_client_mref := Ref} = State) ->
   {stop, downstream_client_down, State};
 handle_info(Info, State) ->
-  lager:info("Unknown info: ~p", [Info]),
+  lager:error("Unknown info: ~p", [Info]),
   {noreply, State}.
 
+handle_call(is_healthy, _From, State) ->
+  #{subscribers := Subscribers} = State,
+  Res = lists:all(fun(#subscriber{pid = Pid}) -> is_pid(Pid) end, Subscribers),
+  {reply, Res, State};
 handle_call(Call, _From, State) ->
-  lager:info("Unknown call: ~p", [Call]),
-  {noreply, State}.
+  lager:error("Unknown call: ~p", [Call]),
+  {reply, {error, unknown_call}, State}.
 
 handle_cast({assignments_received, MemberId, GenerationId, Assignments},
             #{ route       := Route
@@ -148,7 +158,7 @@ handle_cast(assignments_revoked, #{subscribers := Subscribers} = State) ->
   ok = stop_subscribers(Subscribers),
   {noreply, State#{subscribers := []}};
 handle_cast(Cast, State) ->
-  lager:info("Unknown cast: ~p", [Cast]),
+  lager:error("Unknown cast: ~p", [Cast]),
   {noreply, State}.
 
 terminate(_Reason, #{coordinator := Coordinator} = _State) ->

@@ -9,7 +9,6 @@ test/*.beam
 test/ct.cover.spec
 *.d
 *.plt
-.erlang.mk
 eunit.coverdata
 ct.coverdata
 xrefr

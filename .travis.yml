@@ -20,15 +20,13 @@ otp_release:
 
 script:
   - set -e
+  - git clone https://github.com/erlang/rebar3.git; cd rebar3; ./bootstrap; cd ..
+  - export rebar=./rebar3/rebar3
   - make vsn-check
-  - make deps
-  - make app
+  - make
   - make xref
   - make edoc
   - make test-env
   - make t
   - make distclean
-  - echo "verifying rebar3 compilation"
-  - git clone https://github.com/erlang/rebar3.git; cd rebar3; ./bootstrap; cd ..
-  - ./rebar3/rebar3 compile
 

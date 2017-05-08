@@ -20,8 +20,7 @@
 -export([ start_link/0
         , init/1
         , post_init/1
-        , get_children/0
-        , get_children/1
+        , get_group_member_children/1
         ]).
 
 -include("brucke_int.hrl").
@@ -32,17 +31,15 @@
 start_link() ->
   supervisor3:start_link({local, ?ROOT_SUP}, ?MODULE, ?ROOT_SUP).
 
--spec get_children() -> [{ID::term(), pid() | atom()}].
-get_children() ->
-  get_children(?ROOT_SUP).
-
--spec get_children(atom() | pid()) -> [{ID::term(), pid() | atom()}].
-get_children(Pid) ->
-  lists:map(fun({ID, ChildPid, _Worker, _Modules}) ->
-                {ID, ChildPid}
-            end, supervisor3:which_children(Pid)).
+-spec get_group_member_children(term()) -> [{ID::term(), pid() | atom()}].
+get_group_member_children(Upstream) ->
+  case supervisor3:find_child(?ROOT_SUP, Upstream) of
+    Pid when is_pid(Pid) -> get_children(Pid);
+    _ -> []
+  end.
 
 init(?ROOT_SUP) ->
+  ok = brucke_http:init(),
   ok = brucke_config:init(),
   ok = brucke_metrics:init(),
   AllClients = brucke_config:all_clients(),
@@ -50,7 +47,7 @@ init(?ROOT_SUP) ->
     fun({ClientId, Endpoints, ClientConfig}) ->
       ok = brod:start_client(Endpoints, ClientId, ClientConfig)
     end, AllClients),
-  AllRoutes = brucke_config:all_routes(),
+  AllRoutes = brucke_routes:all(),
   RouteSups = [route_sup_spec(Route) || Route <- AllRoutes],
   {ok, {{one_for_one, 0, 1}, RouteSups}};
 init({?GROUP_MEMBER_SUP, _Route}) ->
@@ -132,6 +129,12 @@ validate_repartitioning_strategy(UpstreamPartitionCount,
     _Other ->
       ok
   end.
+
+-spec get_children(atom() | pid()) -> [{ID::term(), pid() | atom()}].
+get_children(Pid) ->
+  lists:map(fun({ID, ChildPid, _Worker, _Modules}) ->
+                {ID, ChildPid}
+            end, supervisor3:which_children(Pid)).
 
 %%%_* Emacs ====================================================================
 %%% Local Variables:
