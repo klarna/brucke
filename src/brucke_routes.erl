@@ -241,9 +241,11 @@ schema() ->
        end
    , default_begin_offset =>
        fun(_, B) ->
-           (B =:= latest orelse B =:= earliest) orelse
+           (B =:= latest orelse
+            B =:= earliest orelse
+            is_integer(B)) orelse
              fmt("default_begin_offset should be either "
-                 "'latest' or 'earliest'\nGot~p", [B])
+                 "'latest', 'earliest' or an integer\nGot~p", [B])
        end
    , compression =>
        fun(_, C) ->

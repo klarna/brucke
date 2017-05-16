@@ -32,8 +32,8 @@
 init() ->
   Prefix0 = atom_to_list(?APPLICATION),
   Prefix = case brucke_app:graphite_root_path() of
-             {ok, Root} -> Root;
-             undefined  -> Prefix0
+             undefined -> Prefix0;
+             Root -> Root
            end,
   case brucke_app:graphite_host() of
     undefined ->
