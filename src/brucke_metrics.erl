@@ -42,8 +42,8 @@ init() ->
     Host ->
       Opts0 = [{prefix, iolist_to_binary(Prefix)}, {host, Host}],
       Opts = case brucke_app:graphite_port() of
-               {ok, Port} -> [{port, Port} | Opts0];
-               undefined  -> Opts0
+               undefined  -> Opts0;
+               Port -> [{port, Port} | Opts0]
              end,
       {ok, _Pid} = graphiter:start(?WRITER, Opts),
       ok
