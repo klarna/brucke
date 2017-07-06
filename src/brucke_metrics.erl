@@ -45,8 +45,14 @@ init() ->
                undefined  -> Opts0;
                Port -> [{port, Port} | Opts0]
              end,
-      {ok, _Pid} = graphiter:start(?WRITER, Opts),
-      ok
+      case graphiter:start(?WRITER, Opts) of
+        {ok, _Pid} ->
+          ok;
+        {error, {already_started, _Pid}} ->
+          ok;
+        _else ->
+          error
+      end
   end.
 
 %% @doc Increment counter.
