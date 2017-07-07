@@ -19,17 +19,22 @@
 -export([init/0]).
 
 init() ->
-  Port = brucke_app:http_port(),
-  Dispatch = cowboy_router:compile([{'_',
-                                     [ {"/ping", brucke_http_ping_handler, []}
-                                     , {"/", brucke_http_healthcheck_handler, []}
-                                     , {"/healthcheck", brucke_http_healthcheck_handler, []}
-                                     ]}]),
-  lager:info("Starting http listener on port ~p", [Port]),
-  {ok, _} = cowboy:start_http(http, 8, [{port, Port}],
-                              [ {env, [{dispatch, Dispatch}]}
-                              , {onresponse, fun error_hook/4}]),
-  ok.
+  case brucke_app:http_port() of
+    undefined ->
+      %% not configured, do not start anything
+      ok;
+    Port ->
+      Dispatch = cowboy_router:compile([{'_',
+                                         [ {"/ping", brucke_http_ping_handler, []}
+                                         , {"/", brucke_http_healthcheck_handler, []}
+                                         , {"/healthcheck", brucke_http_healthcheck_handler, []}
+                                         ]}]),
+      lager:info("Starting http listener on port ~p", [Port]),
+      {ok, _} = cowboy:start_http(http, 8, [{port, Port}],
+                                  [ {env, [{dispatch, Dispatch}]}
+                                  , {onresponse, fun error_hook/4}]),
+      ok
+  end.
 
 error_hook(Code, _Headers, _Body, Req) ->
   {Method, _} = cowboy_req:method(Req),
