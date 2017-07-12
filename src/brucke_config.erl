@@ -292,6 +292,8 @@ validate_client_config(ClientId, Config) ->
 %% @private
 do_validate_client_config(ClientId, {ssl, Options}) ->
   {ssl, validate_ssl_option(ClientId, Options)};
+do_validate_client_config(ClientId, {sasl, Options}) ->
+  {sasl, validate_sasl_option(ClientId, Options)};
 do_validate_client_config(_ClientId, {_, _} = ConfigEntry) ->
   ConfigEntry;
 do_validate_client_config(ClientId, Other) ->
@@ -346,6 +348,22 @@ validate_ssl_file(ClientId, Filename) ->
     false ->
       lager:emergency("ssl file ~p not found for client ~p", [Path, ClientId]),
       exit(bad_ssl_file)
+  end.
+
+-spec validate_sasl_option(client_id(), list()) ->
+        {plain, binary(), binary()} | none().
+validate_sasl_option(ClientId, SaslOptions) ->
+  Username = do_validate_sasl_option(ClientId, username, SaslOptions),
+  Password = do_validate_sasl_option(ClientId, password, SaslOptions),
+  {plain, Username, Password}.
+
+do_validate_sasl_option(ClientId, Option, SaslOptions) ->
+  case lists:keyfind(Option, 1, SaslOptions) of
+    {_, Value} when is_list(Value) -> Value;
+    {_, Value} when is_atom(Value) -> atom_to_list(Value);
+    false ->
+      lager:emergency("SASL ~p is not specified or in wrong format for client ~p", [Option, ClientId]),
+      exit(bad_sasl_credentials)
   end.
 
 %%%_* Tests ====================================================================
