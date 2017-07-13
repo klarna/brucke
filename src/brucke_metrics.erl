@@ -51,7 +51,7 @@ init() ->
         {error, {already_started, _Pid}} ->
           ok;
         _else ->
-          {error, Other}
+          {error, other}
       end
   end.
 
