@@ -37,8 +37,8 @@ init() ->
           ok;
         {error, {already_started, _Pid}} ->
           ok;
-        _else ->
-          {error, other}
+        Other ->
+          {error, Other}
       end
   end.
 
