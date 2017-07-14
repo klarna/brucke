@@ -30,10 +30,16 @@ init() ->
                                          , {"/healthcheck", brucke_http_healthcheck_handler, []}
                                          ]}]),
       lager:info("Starting http listener on port ~p", [Port]),
-      {ok, _} = cowboy:start_http(http, 8, [{port, Port}],
+      case cowboy:start_http(http, 8, [{port, Port}],
                                   [ {env, [{dispatch, Dispatch}]}
-                                  , {onresponse, fun error_hook/4}]),
-      ok
+                                  , {onresponse, fun error_hook/4}]) of
+        {ok, _Pid} ->
+          ok;
+        {error, {already_started, _Pid}} ->
+          ok;
+        Other ->
+          {error, Other}
+      end
   end.
 
 error_hook(Code, _Headers, _Body, Req) ->
