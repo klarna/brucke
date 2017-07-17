@@ -21,6 +21,21 @@ Cluster names and client names must comply to erlang atom syntax.
       - client: brod_client_1
         cluster: kafka_cluster_1
         config: [] # optional
+      - client: brod_client_2 # example for SSL connection
+        cluster: kafka_cluster_1
+        config:
+          ssl: true
+      - client: brod_client_3 # example for SASL_SSL and custom certificates
+        cluster: kafka_cluster_1
+        config:
+          ssl:
+            # start with "priv/" or provide full path
+            cacertfile: priv/ssl/ca.crt
+            certfile: priv/ssl/client.crt
+            keyfile: priv/ssl/client.key
+          sasl:
+            username: brucke
+            password: secret
     routes:
       - upstream_client: brod_client_1
         downstream_client: brod_client_1
