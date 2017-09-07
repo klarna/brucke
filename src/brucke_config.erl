@@ -47,7 +47,6 @@
 -export([ init/0
         , is_configured_client_id/1
         , get_cluster_name/1
-        , get_consumer_group_id/1
         , all_clients/0
         , get_client_endpoints/1
         ]).
@@ -88,10 +87,6 @@ is_configured_client_id(ClientId) when is_atom(ClientId) ->
 get_cluster_name(ClientId) when is_atom(ClientId) ->
   {ClientId, ClusterName, _Config} = lookup(ClientId),
   ClusterName.
-
--spec get_consumer_group_id(brod_client_id()) -> consumer_group_id().
-get_consumer_group_id(ClientId) when is_atom(ClientId) ->
-  iolist_to_binary([get_cluster_name(ClientId), "-brucke-cg"]).
 
 -spec all_clients() -> [client()].
 all_clients() ->
