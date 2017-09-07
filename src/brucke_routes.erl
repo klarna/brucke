@@ -18,6 +18,7 @@
 -export([ all/0
         , init/1
         , health_status/0
+        , get_cg_id/1
         ]).
 
 -include("brucke_int.hrl").
@@ -32,7 +33,11 @@
          is_binary(N) orelse
          is_list(N) andalso N =/= [] andalso ?IS_PRINTABLE(hd(N)))).
 
+-define(NO_CG_ID_OPTION, ?undef).
+
 -type validation_result() :: true | binary() | [validation_result()].
+-type raw_cg_id() :: ?undef | atom() | string() | binary().
+-type cg_id() :: binary().
 
 %%%_* APIs =====================================================================
 
@@ -108,6 +113,14 @@ health_status() ->
 endpoints_to_maps(Endpoints) ->
   lists:map(fun({Host, Port}) -> #{host => list_to_binary(Host), port => Port} end, Endpoints).
 
+%% @doc Get upstream consumer group ID from rout options.
+%% If no `upstream_cg_id' configured, build it from cluster name.
+%% @end
+get_cg_id(Options) ->
+  maps:get(upstream_cg_id, Options).
+
+%%%_* Internal functions =======================================================
+
 %% @private
 -spec is_healthy(route()) -> boolean().
 is_healthy(#route{upstream = U}) ->
@@ -116,8 +129,6 @@ is_healthy(#route{upstream = U}) ->
     fun({_Id, Pid}) ->
         is_pid(Pid) andalso brucke_member:is_healthy(Pid)
     end, Members).
-
-%%%_* Internal functions =======================================================
 
 -spec do_init_loop([raw_route()]) -> ok.
 do_init_loop([]) -> ok;
@@ -177,6 +188,7 @@ convert_to_route_record(Route) ->
    , filter_init_arg := FilterInitArg
    , default_begin_offset := BeginOffset
    , compression := Compression
+   , upstream_cg_id := RawCgId
    } = Route,
   ProducerConfig = [{compression, Compression}],
   ConsumerConfig = [{begin_offset, BeginOffset}],
@@ -187,6 +199,7 @@ convert_to_route_record(Route) ->
      , filter_init_arg => FilterInitArg
      , producer_config => ProducerConfig
      , consumer_config => ConsumerConfig
+     , upstream_cg_id => mk_cg_id(UpstreamClientId, RawCgId)
      },
   %% flatten out the upstream topics
   %% to simplify the config as if it's all
@@ -206,6 +219,7 @@ defaults() ->
    , compression                     => ?DEFAULT_COMPRESSION
    , filter_module                   => ?DEFAULT_FILTER_MODULE
    , filter_init_arg                 => ?DEFAULT_FILTER_INIT_ARG
+   , upstream_cg_id                  => ?NO_CG_ID_OPTION
    }.
 
 schema() ->
@@ -225,8 +239,9 @@ schema() ->
              invalid_topic_name(downstream, Topic)
        end
    , upstream_topics =>
-       fun(#{upstream_client := UpstreamClientId}, Topic) ->
-           validate_upstream_topics(UpstreamClientId, Topic)
+       fun(#{upstream_client := UpstreamClientId} = RawRoute, Topic) ->
+           CgId = maps:get(upstream_cg_id, RawRoute, ?NO_CG_ID_OPTION),
+           validate_upstream_topics(UpstreamClientId, CgId, Topic)
        end
    , repartitioning_strategy =>
        fun(_, S) ->
@@ -266,6 +281,7 @@ schema() ->
             end
         end
     , filter_init_arg => fun(_, _Arg) -> true end
+    , upstream_cg_id => fun(_, _Name) -> true end
    }.
 
 -spec apply_route_schema(raw_route(), #{}, #{}, #{}, validation_result()) ->
@@ -326,47 +342,56 @@ ensure_no_loopback(UpstreamTopics, DownstreamTopic) ->
 is_configured_client_id(ClientId) ->
   brucke_config:is_configured_client_id(ClientId).
 
--spec validate_upstream_topics(brod_client_id(),
+-spec validate_upstream_topics(brod_client_id(), raw_cg_id(),
                                topic_name() | [topic_name()]) ->
                                   validation_result().
-validate_upstream_topics(_ClientId, []) ->
+validate_upstream_topics(_ClientId, _CgId, []) ->
   invalid_topic_name(upstream, []);
-validate_upstream_topics(ClientId, Topic) when ?IS_VALID_TOPIC_NAME(Topic) ->
-  validate_upstream_topic(ClientId, Topic);
-validate_upstream_topics(ClientId, Topics0) when is_list(Topics0) ->
+validate_upstream_topics(ClientId, CgId, Topic) when ?IS_VALID_TOPIC_NAME(Topic) ->
+  validate_upstream_topic(ClientId, CgId, Topic);
+validate_upstream_topics(ClientId, CgId, Topics0) when is_list(Topics0) ->
   case lists:partition(fun(T) -> ?IS_VALID_TOPIC_NAME(T) end, Topics0) of
     {Topics, []} ->
-      [validate_upstream_topic(ClientId, T) || T <- Topics];
+      [validate_upstream_topic(ClientId, CgId, T) || T <- Topics];
     {_, InvalidTopics} ->
       invalid_topic_name(upstream, InvalidTopics)
   end.
 
--spec validate_upstream_topic(brod_client_id(), topic_name()) ->
+-spec validate_upstream_topic(brod_client_id(), raw_cg_id(), topic_name()) ->
         [true | validation_result()].
-validate_upstream_topic(ClientId, Topic) ->
-  ClientIds = lookup_upstream_client_ids_by_topic(Topic),
-  ClusterName = brucke_config:get_cluster_name(ClientId),
+validate_upstream_topic(ClientId, RawCgId, Topic) ->
+  CgId = mk_cg_id(ClientId, RawCgId),
+  Cgs = find_cg_by_topic(Topic),
   lists:map(
     fun(Id) ->
-      case ClusterName =:= brucke_config:get_cluster_name(Id) of
+      case Id =:= CgId of
         true ->
-          fmt("Duplicated route for upstream topic ~s in cluster ~s. "
-              "This means you are trying to bridge one upstream topic to "
-              "two or more downstream topics. If this is a valid use case "
-              "(not misconfiguration), a workaround is to make a copy of the "
-              "upstream cluster with a different name assigned.",
-              [Topic, ClusterName]);
+          fmt("Duplicated routes for upstream topic ~s in the same consumer group ~s.",
+              [Topic, CgId]);
         false ->
           true
       end
-    end, ClientIds).
+    end, Cgs).
 
--spec lookup_upstream_client_ids_by_topic(topic_name()) -> [brod_client_id()].
-lookup_upstream_client_ids_by_topic(Topic) ->
+%% @private Make upstream consumer group ID.
+%% If upstream_cg_id is not found in route option,
+%% build the ID from upstream cluster name (for backward compatibility).
+%% @end
+-spec mk_cg_id(brod_client_id(), raw_cg_id()) -> cg_id().
+mk_cg_id(ClientId, ?NO_CG_ID_OPTION) ->
+  ClusterName = brucke_config:get_cluster_name(ClientId),
+  iolist_to_binary([ClusterName, "-brucke-cg"]);
+mk_cg_id(_ClientId, A) when is_atom(A) ->
+  erlang:atom_to_binary(A, utf8);
+mk_cg_id(_ClientId, Str) ->
+  erlang:iolist_to_binary(Str).
+
+-spec find_cg_by_topic(topic_name()) -> [cg_id()].
+find_cg_by_topic(Topic) ->
   lists:foldl(
-    fun(#route{upstream = {ClientId, Topic_}}, Acc) ->
+    fun(#route{upstream = {_ClientId, Topic_}, options = Options}, Acc) ->
       case Topic_ =:= topic(Topic) of
-        true  -> [ClientId | Acc];
+        true -> [get_cg_id(Options) | Acc];
         false -> Acc
       end
     end, [], all()).
@@ -477,15 +502,24 @@ duplicated_source_test() ->
                 , {downstream_client, client_1}
                 , {downstream_topic, <<"topic_3">>}
                 ],
-  DupeRoute = [ {upstream_client, client_1}
-              , {upstream_topics, <<"topic_1">>}
-              , {downstream_client, client_1}
-              , {downstream_topic, <<"topic_3">>}
-              ],
-  ok = init([ValidRoute1, ValidRoute2, DupeRoute]),
-  ?assertMatch([ #route{upstream = {client_1, <<"topic_1">>}}
+  DupeRoute   = [ {upstream_client, client_1}
+                , {upstream_topics, <<"topic_1">>}
+                , {downstream_client, client_1}
+                , {downstream_topic, <<"topic_3">>}
+                ],
+  ValidRoute3 = [ {upstream_client, client_2}
+                , {upstream_topics, <<"topic_1">>}
+                , {downstream_client, client_2}
+                , {downstream_topic, <<"topic_5">>}
+                , {upstream_cg_id, <<"the-id">>}
+                ],
+  ok = init([ValidRoute1, ValidRoute2, DupeRoute, ValidRoute3]),
+  ?assertMatch([ #route{upstream = {client_1, <<"topic_1">>},
+                        downstream = {client_1, <<"topic_3">>}}
                , #route{upstream = {client_1, <<"topic_2">>}}
                , #route{upstream = {client_1, <<"topic_4">>}}
+               , #route{upstream = {client_2, <<"topic_1">>},
+                        downstream = {client_2, <<"topic_5">>}}
                ], all_sorted()),
   ?assertEqual([], ets:lookup(?T_ROUTES, {client_1, <<"unknown_topic">>})),
   ok = destroy().

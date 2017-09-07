@@ -106,7 +106,7 @@ handle_info({post_init, #route{options = Options} = Route}, State) ->
   ProducerConfig = maps:get(producer_config, Options, []),
   ok = brod:start_consumer(UpstreamClientId, UpstreamTopic, ConsumerConfig),
   ok = brod:start_producer(DownstreamClientId, DownstreamTopic, ProducerConfig),
-  ConsumerGroupId = brucke_config:get_consumer_group_id(UpstreamClientId),
+  ConsumerGroupId = brucke_routes:get_cg_id(Options),
   {ok, Pid} =
     brod_group_coordinator:start_link(UpstreamClientId, ConsumerGroupId, [UpstreamTopic],
                                       GroupConfig, ?MODULE, self()),

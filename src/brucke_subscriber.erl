@@ -54,8 +54,6 @@ start_link(Route, UpstreamPartition, BeginOffset) ->
   #{ filter_module := FilterModule
    , filter_init_arg := InitArg
    } = Options,
-  {ok, CbState} = brucke_filter:init(FilterModule, UpstreamTopic,
-                                     UpstreamPartition, InitArg),
   UpstreamClusterName = brucke_config:get_cluster_name(UpstreamClientId),
   State = #{ route              => Route
            , upstream_partition => UpstreamPartition
@@ -63,9 +61,13 @@ start_link(Route, UpstreamPartition, BeginOffset) ->
            , consumer           => subscribing
            , pending_acks       => []
            , upstream_cluster   => UpstreamClusterName
-           , filter_cb_state    => CbState
            },
-  Pid = proc_lib:spawn_link(fun() -> loop(State) end),
+  Pid = proc_lib:spawn_link(
+          fun() ->
+              {ok, CbState} = brucke_filter:init(FilterModule, UpstreamTopic,
+                                                 UpstreamPartition, InitArg),
+              loop(State#{filter_cb_state => CbState})
+          end),
   Pid ! {subscribe, BeginOffset, 0},
   _ = erlang:send_after(?CHECK_PRODUCER_DELAY, Pid, ?CHECK_PRODUCER_MSG),
   {ok, Pid}.
