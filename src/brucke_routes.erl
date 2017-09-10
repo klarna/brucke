@@ -45,8 +45,7 @@
 init(Routes) when is_list(Routes) ->
   ets:info(?T_ROUTES) =/= ?undef andalso exit({?T_ROUTES, already_created}),
   ets:info(?T_DISCARDED_ROUTES) =/= ?undef andalso exit({?T_DISCARDED_ROUTES, already_created}),
-  ets:new(?T_ROUTES, [named_table, protected, set,
-                      {keypos, #route.upstream}]),
+  ets:new(?T_ROUTES, [named_table, protected, bag]),
   ets:new(?T_DISCARDED_ROUTES, [named_table, protected, bag]),
   try
     ok = do_init_loop(Routes)
@@ -502,7 +501,7 @@ duplicated_source_test() ->
                 , {downstream_client, client_1}
                 , {downstream_topic, <<"topic_3">>}
                 ],
-  DupeRoute   = [ {upstream_client, client_1}
+  DupeRoute1  = [ {upstream_client, client_1}
                 , {upstream_topics, <<"topic_1">>}
                 , {downstream_client, client_1}
                 , {downstream_topic, <<"topic_3">>}
@@ -513,13 +512,24 @@ duplicated_source_test() ->
                 , {downstream_topic, <<"topic_5">>}
                 , {upstream_cg_id, <<"the-id">>}
                 ],
-  ok = init([ValidRoute1, ValidRoute2, DupeRoute, ValidRoute3]),
+  ValidRoute4 = [ {upstream_client, client_2}
+                , {upstream_topics, <<"topic_1">>}
+                , {downstream_client, client_2}
+                , {downstream_topic, <<"topic_6">>}
+                , {upstream_cg_id, <<"the-id-2">>}
+                ],
+  DupeRoute2 = ValidRoute4,
+
+  ok = init([ValidRoute1, ValidRoute2, DupeRoute1,
+             ValidRoute3, ValidRoute4, DupeRoute2]),
   ?assertMatch([ #route{upstream = {client_1, <<"topic_1">>},
                         downstream = {client_1, <<"topic_3">>}}
                , #route{upstream = {client_1, <<"topic_2">>}}
                , #route{upstream = {client_1, <<"topic_4">>}}
                , #route{upstream = {client_2, <<"topic_1">>},
                         downstream = {client_2, <<"topic_5">>}}
+               , #route{upstream = {client_2, <<"topic_1">>},
+                        downstream = {client_2, <<"topic_6">>}}
                ], all_sorted()),
   ?assertEqual([], ets:lookup(?T_ROUTES, {client_1, <<"unknown_topic">>})),
   ok = destroy().
