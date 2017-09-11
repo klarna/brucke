@@ -45,10 +45,9 @@
 init(Routes) when is_list(Routes) ->
   ets:info(?T_ROUTES) =/= ?undef andalso exit({?T_ROUTES, already_created}),
   ets:info(?T_DISCARDED_ROUTES) =/= ?undef andalso exit({?T_DISCARDED_ROUTES, already_created}),
-  %% bag table, allow entry duplication
-  %% however duplicated upstream {ClientId, Topic}
-  %% is not allowed within the same consumer group {ClusterName, CgId}
-  ets:new(?T_ROUTES, [named_table, protected, bag]),
+  %% set table, allow no entry duplication
+  ets:new(?T_ROUTES, [named_table, protected, set,
+                      {keypos, #route.upstream}]),
   ets:new(?T_DISCARDED_ROUTES, [named_table, protected, bag]),
   try
     ok = do_init_loop(Routes)
@@ -360,17 +359,31 @@ validate_upstream_topics(ClientId, CgId, Topics0) when is_list(Topics0) ->
   end.
 
 -spec validate_upstream_topic(brod_client_id(), raw_cg_id(), topic_name()) ->
-        true | validation_result().
+        validation_result().
 validate_upstream_topic(ClientId, RawCgId, Topic) ->
   ClusterName = brucke_config:get_cluster_name(ClientId),
   CgId = mk_cg_id(ClientId, RawCgId),
-  case is_duplication(ClusterName, CgId, Topic) of
+  case is_cg_duplication(ClusterName, CgId, Topic) of
     false ->
-      true;
+      validate_upstream_client(ClientId, Topic);
     true ->
       fmt("Duplicated routes for upstream topic ~s "
           "in the same consumer group ~s in cluster ~s.",
           [Topic, CgId, ClusterName])
+  end.
+
+%% @private Duplicated upstream topic is not allowed for the same client.
+%% Because one `brod_consumer' allows only one subscriber.
+%% @end
+-spec validate_upstream_client(brod_client_id(), topic_name()) ->
+        validation_result().
+validate_upstream_client(ClientId, Topic) ->
+  case ets:lookup(?T_ROUTES, {ClientId, Topic}) of
+    [] ->
+      true;
+    _ ->
+      fmt("Upstream topic ~p is used more than once for client ~p",
+          [Topic, ClientId])
   end.
 
 %% @private Make upstream consumer group ID.
@@ -390,14 +403,16 @@ mk_cg_id(_ClientId, Str) ->
 %% route. Two routes are considered duplication when they have the same upstream
 %% cluster name + consumer group ID + topic name
 %% @end
--spec is_duplication(cluster_name(), cg_id(), topic_name()) -> boolean().
-is_duplication(ClusterName, CgId, Topic) ->
+-spec is_cg_duplication(cluster_name(), cg_id(), topic_name()) -> boolean().
+is_cg_duplication(ClusterName, CgId, Topic) ->
   lists:any(
     fun(#route{upstream = {ClientId, Topic_}, options = Options}) ->
       ClusterName_ = brucke_config:get_cluster_name(ClientId),
       CgId_ = get_cg_id(Options),
       {ClusterName_, CgId_, Topic_} =:= {ClusterName, CgId, topic(Topic)}
     end, all()).
+
+%% @private Find the given top
 
 -spec invalid_topic_name(upstream | downstream, any()) -> validation_result().
 invalid_topic_name(UpOrDown_stream, NameOrList) ->
@@ -516,7 +531,7 @@ duplicated_source_test() ->
                 , {downstream_topic, <<"topic_5">>}
                 , {upstream_cg_id, <<"the-id">>}
                 ],
-  ValidRoute4 = [ {upstream_client, client_2}
+  ValidRoute4 = [ {upstream_client, client_3}
                 , {upstream_topics, <<"topic_1">>}
                 , {downstream_client, client_2}
                 , {downstream_topic, <<"topic_6">>}
@@ -532,7 +547,7 @@ duplicated_source_test() ->
                , #route{upstream = {client_1, <<"topic_4">>}}
                , #route{upstream = {client_2, <<"topic_1">>},
                         downstream = {client_2, <<"topic_5">>}}
-               , #route{upstream = {client_2, <<"topic_1">>},
+               , #route{upstream = {client_3, <<"topic_1">>},
                         downstream = {client_2, <<"topic_6">>}}
                ], all_sorted()),
   ?assertEqual([], ets:lookup(?T_ROUTES, {client_1, <<"unknown_topic">>})),
