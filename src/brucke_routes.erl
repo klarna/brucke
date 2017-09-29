@@ -339,11 +339,11 @@ ensure_no_loopback(UpstreamTopics, DownstreamTopic) ->
     false -> ok
   end.
 
--spec is_configured_client_id(brod_client_id()) -> boolean().
+-spec is_configured_client_id(brod:client_id()) -> boolean().
 is_configured_client_id(ClientId) ->
   brucke_config:is_configured_client_id(ClientId).
 
--spec validate_upstream_topics(brod_client_id(), raw_cg_id(),
+-spec validate_upstream_topics(brod:client_id(), raw_cg_id(),
                                topic_name() | [topic_name()]) ->
                                   validation_result().
 validate_upstream_topics(_ClientId, _CgId, []) ->
@@ -358,7 +358,7 @@ validate_upstream_topics(ClientId, CgId, Topics0) when is_list(Topics0) ->
       invalid_topic_name(upstream, InvalidTopics)
   end.
 
--spec validate_upstream_topic(brod_client_id(), raw_cg_id(), topic_name()) ->
+-spec validate_upstream_topic(brod:client_id(), raw_cg_id(), topic_name()) ->
         validation_result().
 validate_upstream_topic(ClientId, RawCgId, Topic) ->
   ClusterName = brucke_config:get_cluster_name(ClientId),
@@ -375,7 +375,7 @@ validate_upstream_topic(ClientId, RawCgId, Topic) ->
 %% @private Duplicated upstream topic is not allowed for the same client.
 %% Because one `brod_consumer' allows only one subscriber.
 %% @end
--spec validate_upstream_client(brod_client_id(), topic_name()) ->
+-spec validate_upstream_client(brod:client_id(), topic_name()) ->
         validation_result().
 validate_upstream_client(ClientId, Topic) ->
   case ets:lookup(?T_ROUTES, {ClientId, Topic}) of
@@ -390,7 +390,7 @@ validate_upstream_client(ClientId, Topic) ->
 %% If upstream_cg_id is not found in route option,
 %% build the ID from upstream cluster name (for backward compatibility).
 %% @end
--spec mk_cg_id(brod_client_id(), raw_cg_id()) -> cg_id().
+-spec mk_cg_id(brod:client_id(), raw_cg_id()) -> cg_id().
 mk_cg_id(ClientId, ?NO_CG_ID_OPTION) ->
   ClusterName = brucke_config:get_cluster_name(ClientId),
   iolist_to_binary([ClusterName, "-brucke-cg"]);
@@ -422,12 +422,12 @@ invalid_topic_name(UpOrDown_stream, NameOrList) ->
 %% @private Accept atom(), string(), or binary() as topic name,
 %% unified to binary().
 %% @end
--spec topic(topic_name()) -> kafka_topic().
+-spec topic(topic_name()) -> brod:topic().
 topic(Topic) when is_atom(Topic)   -> topic(atom_to_list(Topic));
 topic(Topic) when is_binary(Topic) -> Topic;
 topic(Topic) when is_list(Topic)   -> list_to_binary(Topic).
 
--spec topics(topic_name() | [topic_name()]) -> [kafka_topic()].
+-spec topics(topic_name() | [topic_name()]) -> [brod:topic()].
 topics(TopicName) when ?IS_VALID_TOPIC_NAME(TopicName) ->
   [topic(TopicName)];
 topics(TopicNames) when is_list(TopicNames) ->

@@ -83,7 +83,7 @@ t_basic(Config) when is_list(Config) ->
   DOWNSTREAM = <<"brucke-basic-test-downstream">>,
   Client = client_1, %% configured in priv/brucke.yml
   ok = brod:start_producer(Client, UPSTREAM, []),
-  {ok, [Offset]} = brod:get_offsets(?HOSTS, DOWNSTREAM, 0, latest, 1),
+  {ok, Offset} = brod:resolve_offset(?HOSTS, DOWNSTREAM, 0, latest),
   V0 = uniq_int(),
   V1 = uniq_int(),
   V2 = uniq_int(),
@@ -109,7 +109,7 @@ t_filter(Config) when is_list(Config) ->
   DOWNSTREAM = <<"brucke-filter-test-downstream">>,
   Client = client_1, %% configured in priv/brucke.yml
   ok = brod:start_producer(Client, UPSTREAM, []),
-  {ok, [Offset]} = brod:get_offsets(?HOSTS, DOWNSTREAM, 0, latest, 1),
+  {ok, Offset} = brod:resolve_offset(?HOSTS, DOWNSTREAM, 0, latest),
   V0 = uniq_int(),
   V1 = uniq_int(),
   V2 = uniq_int(),

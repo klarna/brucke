@@ -1,6 +1,6 @@
 #!/usr/bin/env escript
 %% -*- erlang -*-
-%%! -smp enable -sname notcoveredlinessummary -pa ebin -pa ../ebin
+%%! -smp enable -sname notcoveredlinessummary -pa _build/default/lib/brucke/ebin
 
 %%%
 %%%   Copyright (c) 2015-2016, Klarna AB
