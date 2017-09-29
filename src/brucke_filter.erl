@@ -28,17 +28,16 @@
              ]).
 
 -include("brucke_int.hrl").
--include_lib("brod/include/brod.hrl").
 
 -type cb_state() :: term().
--type filter_result() :: boolean() | {kafka_key(), kafka_value()}.
+-type filter_result() :: boolean() | {brod:key(), brod:value()}.
 -type filter_return() :: {filter_result(), cb_state()}.
 
 -define(DEFAULT_STATE, []).
 
 %% Called when route worker (`brucke_subscriber') start/restart.
--callback init(UpstreamTopic :: kafka_topic(),
-               UpstreamPartition :: kafka_partition(),
+-callback init(UpstreamTopic :: brod:topic(),
+               UpstreamPartition :: brod:partition(),
                InitArg :: term()) -> {ok, cb_state()}.
 
 %% Called by assignment worker (`brucke_subscriber') for each message.
@@ -46,33 +45,33 @@
 %% true: No change, forward the message as-is to downstream
 %% false: Discard the message
 %% {NewKey, NewValue}: Produce the transformed new Key and Value to downstream.
--callback filter(Topic :: kafka_topic(),
-                 Partition :: kafka_partition(),
-                 Offset :: kafka_offset(),
-                 Key :: kafka_key(),
-                 Value :: kafka_value(),
+-callback filter(Topic :: brod:topic(),
+                 Partition :: brod:partition(),
+                 Offset :: brod:offset(),
+                 Key :: brod:key(),
+                 Value :: brod:value(),
                  CbState :: cb_state()) -> filter_return().
 
 %% @doc Call callback module's init API
--spec init(module(), kafka_topic(), kafka_partition(), term()) ->
+-spec init(module(), brod:topic(), brod:partition(), term()) ->
         {ok, cb_state()}.
 init(Module, UpstreamTopic, UpstreamPartition, InitArg) ->
   Module:init(UpstreamTopic, UpstreamPartition, InitArg).
 
 %% @doc The default filter does not do anything special.
--spec init(kafka_topic(), kafka_partition(), term()) -> ok.
+-spec init(brod:topic(), brod:partition(), term()) -> ok.
 init(_UpstreamTopic, _UpstreamPartition, _InitArg) ->
   {ok, ?DEFAULT_STATE}.
 
 %% @doc Filter message set.
--spec filter(module(), kafka_topic(), kafka_partition(), kafka_offset(),
-             kafka_key(), kafka_value(), cb_state()) -> filter_return().
+-spec filter(module(), brod:topic(), brod:partition(), brod:offset(),
+             brod:key(), brod:value(), cb_state()) -> filter_return().
 filter(Module, Topic, Partition, Offset, Key, Value, CbState) ->
   Module:filter(Topic, Partition, Offset, Key, Value, CbState).
 
 %% @doc The default filter does nothing.
--spec filter(kafka_topic(), kafka_partition(), kafka_offset(),
-             kafka_key(), kafka_value(), cb_state()) -> filter_result().
+-spec filter(brod:topic(), brod:partition(), brod:offset(),
+             brod:key(), brod:value(), cb_state()) -> filter_result().
 filter(_Topic, _Partition, _Offset, _Key, _Value, ?DEFAULT_STATE) ->
   {true, ?DEFAULT_STATE}.
 

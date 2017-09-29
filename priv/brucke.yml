@@ -6,6 +6,8 @@ kafka_clusters:
 brod_clients:
   - client: client_1
     cluster: local_cluster
+    config:
+      query_api_versions: false
   - client: client_2
     cluster: local_cluster_ssl
     config:
@@ -14,6 +16,7 @@ brod_clients:
         cacertfile: priv/ssl/ca.crt
         certfile: priv/ssl/client.crt
         keyfile: priv/ssl/client.key
+      query_api_versions: false
 routes:
   - upstream_client: client_1
     downstream_client: client_1

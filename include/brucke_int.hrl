@@ -65,13 +65,13 @@
 -type endpoint() :: {hostname(), portnum()}.
 -type cluster_name() :: binary().
 -type cluster() :: {cluster_name(), [endpoint()]}.
--type client() :: {brod_client_id(), [endpoint()], brod_client_config()}.
+-type client() :: {brod:client_id(), [endpoint()], brod:client_config()}.
 -type route_options() :: [{route_option_key(), term()}]
                        | #{route_option_key() => term()}.
 -type topic_name() :: atom() | string() | binary().
 
--type upstream() :: {brod_client_id(), kafka_topic()}.
--type downstream() :: {brod_client_id(), kafka_topic()}.
+-type upstream() :: {brod:client_id(), brod:topic()}.
+-type downstream() :: {brod:client_id(), brod:topic()}.
 
 -record(route, { upstream   :: upstream()
                , downstream :: downstream()

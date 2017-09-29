@@ -21,15 +21,14 @@
         , stop/1
         ]).
 
--include_lib("brod/include/brod.hrl").
 -include("brucke_int.hrl").
 
--type partition() :: kafka_partition().
--type offset() :: kafka_offset().
+-type partition() :: brod:partition().
+-type offset() :: brod:offset().
 -type state() :: #{}.
 -define(UNACKED(CallRef, Offset), {CallRef, Offset, unacked}).
 -define(ACKED(CallRef, Offset), {CallRef, Offset, acked}).
--type pending_acks() :: [{brod_call_ref() | ignored, offset(), unacked | acked}].
+-type pending_acks() :: [{brod:call_ref() | ignored, offset(), unacked | acked}].
 -type cb_state() :: brucke_filter:cb_state().
 
 -define(SUBSCRIBE_RETRY_LIMIT, 3).
@@ -186,9 +185,9 @@ do_handle_message_set(#{ route := Route
                      }).
 
 %% @private
--spec produce(fun((offset(), kafka_key(), kafka_value(), cb_state()) ->
+-spec produce(fun((offset(), brod:key(), brod:value(), cb_state()) ->
                     brucke_filter:filter_return()),
-              fun((kafka_key(), kafka_value()) -> brod_call_ref()),
+              fun((brod:key(), brod:value()) -> brod:call_ref()),
               [#kafka_message{}], pending_acks(),
               cb_state()) -> {pending_acks(), cb_state()}.
 produce(_FilterFun, _ProduceFun, [], PendingAcks, CbState) ->

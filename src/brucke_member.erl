@@ -41,11 +41,10 @@
         ]).
 
 -include("brucke_int.hrl").
--include_lib("brod/include/brod.hrl").
 
--type topic() :: kafka_topic().
--type partition() :: kafka_partition().
--type offset() :: kafka_offset().
+-type topic() :: brod:topic().
+-type partition() :: brod:partition().
+-type offset() :: brod:offset().
 
 -define(SUBSCRIBER_RESTART_DELAY_SECONDS, 10).
 -define(DEAD(Ts), {dead_since, Ts}).
@@ -71,16 +70,16 @@ is_healthy(Pid) ->
 get_committed_offsets(_GroupMemberPid, _TopicPartitions) ->
   erlang:exit({no_impl, get_committed_offsets}).
 
--spec assign_partitions(pid(), [kafka_group_member()],
+-spec assign_partitions(pid(), [brod:group_member()],
                         [{topic(), partition()}]) ->
-                          [{kafka_group_member_id(),
-                           [brod_partition_assignment()]}].
+                          [{brod:group_member_id(),
+                           [brod:partition_assignment()]}].
 assign_partitions(_Pid, _Members, _TopicPartitions) ->
   erlang:exit({no_impl, assign_partitions}).
 
--spec assignments_received(pid(), kafka_group_member_id(),
-                           kafka_group_generation_id(),
-                           brod_received_assignments()) -> ok.
+-spec assignments_received(pid(), brod:group_member_id(),
+                           brod:group_generation_id(),
+                           brod:received_assignments()) -> ok.
 assignments_received(MemberPid, MemberId, GenerationId, Assignments) ->
   Msg = {assignments_received, MemberId, GenerationId, Assignments},
   gen_server:cast(MemberPid, Msg).

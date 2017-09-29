@@ -45,13 +45,13 @@ log_skipped_route_alert(Route, Reasons) ->
 get_repartitioning_strategy(Options) ->
   maps:get(repartitioning_strategy, Options, ?DEFAULT_REPARTITIONING_STRATEGY).
 
--spec get_consumer_config(route_options()) -> brod_consumer_config().
+-spec get_consumer_config(route_options()) -> brod:consumer_config().
 get_consumer_config(Options) ->
   maybe_use_brucke_defaults(
     maps:get(consumer_config, Options, []),
     default_consumer_config()).
 
--spec get_producer_config(route_options()) -> brod_producer_config().
+-spec get_producer_config(route_options()) -> brod:producer_config().
 get_producer_config(Options) ->
   maybe_use_brucke_defaults(
     maps:get(producer_config, Options, []),

@@ -76,14 +76,14 @@ init() ->
       exit({bad_brucke_config, File})
   end.
 
--spec is_configured_client_id(brod_client_id()) -> boolean().
+-spec is_configured_client_id(brod:client_id()) -> boolean().
 is_configured_client_id(ClientId) when is_atom(ClientId) ->
   case lookup(ClientId) of
     false            -> false;
     {ClientId, _, _} -> true
   end.
 
--spec get_cluster_name(brod_client_id()) -> cluster_name().
+-spec get_cluster_name(brod:client_id()) -> cluster_name().
 get_cluster_name(ClientId) when is_atom(ClientId) ->
   {ClientId, ClusterName, _Config} = lookup(ClientId),
   ClusterName.
@@ -99,7 +99,7 @@ all_clients() ->
    } || {ClientId, ClusterName, ClientConfig} <- ets:tab2list(?ETS)].
 
 -spec get_client_endpoints(
-        brod_client_id()) -> [{string(), integer()}] | undefined.
+        brod:client_id()) -> [{string(), integer()}] | undefined.
 get_client_endpoints(ClientId) ->
   case lookup(ClientId) of
     false ->
