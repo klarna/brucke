@@ -98,16 +98,15 @@ all_clients() ->
     ClientConfig
    } || {ClientId, ClusterName, ClientConfig} <- ets:tab2list(?ETS)].
 
--spec get_client_endpoints(
-        brod:client_id()) -> [{string(), integer()}] | undefined.
+-spec get_client_endpoints(brod:client_id()) -> [{string(), integer()}].
 get_client_endpoints(ClientId) ->
   case lookup(ClientId) of
     false ->
-      undefined;
+      [];
     {ClientId, ClusterName, _} ->
       case lookup(ClusterName) of
         false ->
-          undefined;
+          [];
         {ClusterName, Endpoints} ->
           Endpoints
       end

@@ -5,4 +5,5 @@
 - 1.13.0
     * Update README to document configs
     * Upgrade brod from 2.5.0 to 3.2.0
-
+- 1.13.1
+    * Fix discarded route formatting for healthcheck
