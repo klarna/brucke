@@ -100,6 +100,7 @@ or set system OS env variables `BRUCKE_FILTER_EBIN_PATHS`.
 
 - `compression`: `no_compression` (defulat), `gzip` or `snappy`
 - `max_partitions_per_group_member`: default = 12, Number of partitions one group member should work on.
+- `required_acks`: `all` (default), `leader` or `none`
 
 # Graphite reporting
 

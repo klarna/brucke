@@ -189,9 +189,11 @@ convert_to_route_record(Route) ->
    , filter_init_arg := FilterInitArg
    , default_begin_offset := BeginOffset
    , compression := Compression
+   , required_acks := RequiredAcks
    , upstream_cg_id := RawCgId
    } = Route,
-  ProducerConfig = [{compression, Compression}],
+  ProducerConfig = [{compression, Compression},
+                    {required_acks, required_acks(RequiredAcks)}],
   ConsumerConfig = [{begin_offset, BeginOffset}],
   Options =
     #{ repartitioning_strategy => RepartitioningStrategy
@@ -213,11 +215,19 @@ convert_to_route_record(Route) ->
     end,
   {ok, lists:map(MapF, topics(UpstreamTopics))}.
 
+%% @private
+required_acks(all) -> -1;
+required_acks(leader) -> 1;
+required_acks(none) -> 0;
+required_acks(Number) -> Number.
+
+%% @private
 defaults() ->
   #{ repartitioning_strategy         => ?DEFAULT_REPARTITIONING_STRATEGY
    , max_partitions_per_group_member => ?MAX_PARTITIONS_PER_GROUP_MEMBER
    , default_begin_offset            => ?DEFAULT_DEFAULT_BEGIN_OFFSET
    , compression                     => ?DEFAULT_COMPRESSION
+   , required_acks                   => ?DEFAULT_REQUIRED_ACKS
    , filter_module                   => ?DEFAULT_FILTER_MODULE
    , filter_init_arg                 => ?DEFAULT_FILTER_INIT_ARG
    , upstream_cg_id                  => ?NO_CG_ID_OPTION
@@ -271,6 +281,17 @@ schema() ->
            fmt("compression should be one of "
                "[no_compression, gzip, snappy]\nGot~p", [C])
        end
+    , required_acks =>
+        fun(_, A) ->
+            A =:= all    orelse
+            A =:= leader orelse
+            A =:= none   orelse
+            A =:= -1     orelse
+            A =:= 1      orelse
+            A =:= 0      orelse
+            fmt("required_acks should be one of "
+                "[all, leader, none, -1, 1 0]\nGot~p", [A])
+        end
     , filter_module =>
         fun(_, Module) ->
             case code:ensure_loaded(Module) of
@@ -492,6 +513,8 @@ bad_routing_options_test() ->
            , [{"unknown_string", x} | R0]
            , [{unknown, x} | R0]
            , [{compression, x} | R0]
+           , [{required_acks, 2} | R0]
+           , [{required_acks, x} | R0]
            , [{filter_module, x} | R0]
            ],
   ok = init(Routes),
