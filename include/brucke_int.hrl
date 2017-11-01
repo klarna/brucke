@@ -58,6 +58,7 @@
 -define(MAX_PARTITIONS_PER_GROUP_MEMBER, 12).
 -define(DEFAULT_DEFAULT_BEGIN_OFFSET, latest).
 -define(DEFAULT_COMPRESSION, no_compression).
+-define(DEFAULT_REQUIRED_ACKS, -1).
 
 -type consumer_group_id() :: binary().
 -type hostname() :: string().

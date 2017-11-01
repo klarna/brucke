@@ -41,6 +41,7 @@
 %%     repartitioning_strategy: strict_p2p
 %%     default_begin_offset: earliest # optional
 %%     compression: no_compression # optional
+%%     required_acks: -1 # optional
 %%
 -module(brucke_config).
 
