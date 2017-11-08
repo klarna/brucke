@@ -19,6 +19,7 @@
         , init/1
         , health_status/0
         , get_cg_id/1
+        , add_skipped_route/2
         ]).
 
 -include("brucke_int.hrl").
@@ -46,9 +47,9 @@ init(Routes) when is_list(Routes) ->
   ets:info(?T_ROUTES) =/= ?undef andalso exit({?T_ROUTES, already_created}),
   ets:info(?T_DISCARDED_ROUTES) =/= ?undef andalso exit({?T_DISCARDED_ROUTES, already_created}),
   %% set table, allow no entry duplication
-  ets:new(?T_ROUTES, [named_table, protected, set,
+  ets:new(?T_ROUTES, [named_table, public, set,
                       {keypos, #route.upstream}]),
-  ets:new(?T_DISCARDED_ROUTES, [named_table, protected, bag]),
+  ets:new(?T_DISCARDED_ROUTES, [named_table, public, bag]),
   try
     ok = do_init_loop(Routes)
   catch C : E ->
@@ -79,40 +80,11 @@ all() ->
 -spec health_status() -> maps:map().
 health_status() ->
   {Healthy0, Unhealthy0} = lists:partition(fun is_healthy/1, all()),
-  MapF =
-    fun(#route{} = R) ->
-        {UpClient, UpTopics} = R#route.upstream,
-        {DnClient, DnTopic} = R#route.downstream,
-        #{upstream => #{endpoints => endpoints_to_maps(brucke_config:get_client_endpoints(UpClient)),
-                        topics => UpTopics},
-          downstream => #{endpoints => endpoints_to_maps(brucke_config:get_client_endpoints(DnClient)),
-                          topic => DnTopic},
-          options => R#route.options};
-       ({raw_route, R}) when is_list(R) ->
-        UpClient = proplists:get_value(upstream_client, R),
-        UpTopics = lists:map(fun(T) -> list_to_binary(T) end, proplists:get_value(upstream_topics, R, [])),
-        DnClient = proplists:get_value(downstream_client, R),
-        DnTopic = list_to_binary(proplists:get_value(downstream_topic, R, "")),
-        Filter = [upstream_client, upstream_topics, downstream_client, downstream_topic, reason],
-        #{upstream => #{endpoints => endpoints_to_maps(brucke_config:get_client_endpoints(UpClient)),
-                        topics => UpTopics},
-          downstream => #{endpoints => endpoints_to_maps(brucke_config:get_client_endpoints(DnClient)),
-                          topic => DnTopic},
-          reason => proplists:get_value(reason, R),
-          options => lists:filter(fun({K, _V}) -> not lists:member(K, Filter);
-                                     (_) -> false
-                                  end, R)};
-       (X) ->
-        lager:error("invalid route specification: ~p", [X]),
-        <<"invalid route specification">>
-    end,
-  Healthy = lists:map(MapF, Healthy0),
-  Unhealthy = lists:map(MapF, Unhealthy0),
-  Discarded = lists:map(MapF, ets:tab2list(?T_DISCARDED_ROUTES)),
+  Healthy = lists:map(fun format_route/1, Healthy0),
+  Unhealthy = lists:map(fun format_route/1, Unhealthy0),
+  Discarded = lists:map(fun format_skipped_route/1,
+                        ets:tab2list(?T_DISCARDED_ROUTES)),
   #{healthy => Healthy, unhealthy => Unhealthy, discarded => Discarded}.
-
-endpoints_to_maps(Endpoints) ->
-  lists:map(fun({Host, Port}) -> #{host => list_to_binary(Host), port => Port} end, Endpoints).
 
 %% @doc Get upstream consumer group ID from rout options.
 %% If no `upstream_cg_id' configured, build it from cluster name.
@@ -120,7 +92,60 @@ endpoints_to_maps(Endpoints) ->
 get_cg_id(Options) ->
   maps:get(upstream_cg_id, Options).
 
+%% @doc Add skipped routes found during or after initialization phase.
+%% e.g. Bad topic name found during init validation,
+%% or when the route worker finds out the upstream or downstream topic does not exist.
+%% @end
+-spec add_skipped_route(route() | raw_route(), iolist()) -> ok.
+add_skipped_route(Route, Reason) ->
+  case Route of
+    #route{} ->
+      %% delete from healthy routes table
+      _ = ets:delete(?T_ROUTES, Route#route.upstream);
+    _ ->
+      ok
+  end,
+  %% insert to discarded table
+  ets:insert(?T_DISCARDED_ROUTES, {Route, iolist_to_binary(Reason)}),
+  brucke_lib:log_skipped_route_alert(Route, Reason),
+  ok.
+
 %%%_* Internal functions =======================================================
+
+%% @private
+format_route(#route{} = R) ->
+  {UpClient, UpTopics} = R#route.upstream,
+  {DnClient, DnTopic} = R#route.downstream,
+  #{upstream => #{endpoints => endpoints_to_maps(brucke_config:get_client_endpoints(UpClient)),
+                  topics => UpTopics},
+    downstream => #{endpoints => endpoints_to_maps(brucke_config:get_client_endpoints(DnClient)),
+                    topic => DnTopic},
+    options => R#route.options}.
+
+%% @private
+format_skipped_route({R, Reason}) when is_list(R) ->
+  UpClient = proplists:get_value(upstream_client, R),
+  UpTopics = lists:map(fun(T) -> list_to_binary(T) end, proplists:get_value(upstream_topics, R, [])),
+  DnClient = proplists:get_value(downstream_client, R),
+  DnTopic = list_to_binary(proplists:get_value(downstream_topic, R, "")),
+  Filter = [upstream_client, upstream_topics, downstream_client, downstream_topic],
+  #{upstream => #{endpoints => endpoints_to_maps(brucke_config:get_client_endpoints(UpClient)),
+                  topics => UpTopics},
+    downstream => #{endpoints => endpoints_to_maps(brucke_config:get_client_endpoints(DnClient)),
+                    topic => DnTopic},
+    reason => Reason,
+    options => lists:filter(fun({K, _V}) -> not lists:member(K, Filter);
+                               (_) -> false
+                            end, R)};
+format_skipped_route({#route{} = Route, Reason}) ->
+  Map = format_route(Route),
+  Map#{reason => Reason};
+format_skipped_route({X, Reason}) ->
+  fmt("invalid route specification ~p\nreason:~s", [X, Reason]).
+
+%% @private
+endpoints_to_maps(Endpoints) ->
+  lists:map(fun({Host, Port}) -> #{host => list_to_binary(Host), port => Port} end, Endpoints).
 
 %% @private
 -spec is_healthy(route()) -> boolean().
@@ -139,14 +164,12 @@ do_init_loop([RawRoute | Rest]) ->
       {ok, Routes} ->
         ets:insert(?T_ROUTES, Routes);
       {error, Reasons} ->
-        ets:insert(?T_DISCARDED_ROUTES, {raw_route, [{reason, Reasons} | RawRoute]}),
         Rs = [[Reason, "\n"] || Reason <- Reasons],
-        ok = brucke_lib:log_skipped_route_alert(RawRoute, Rs)
+        add_skipped_route(RawRoute, Rs)
     end
   catch throw : Reason ->
-      ets:insert(?T_DISCARDED_ROUTES, {raw_route, [{reason, Reason} | RawRoute]}),
       ReasonTxt = io_lib:format("~p", [Reason]),
-      ok = brucke_lib:log_skipped_route_alert(RawRoute, ReasonTxt)
+      add_skipped_route(RawRoute, ReasonTxt)
   end,
   do_init_loop(Rest).
 
