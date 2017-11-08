@@ -59,12 +59,12 @@ post_init({?GROUP_MEMBER_SUP, #route{} = Route}) ->
         , options = Options} = Route,
   case {get_partition_count(Upstream), get_partition_count(Downstream)} of
     {none, _} ->
-      Msg = "upstream topic not found in kafka",
-      ok = brucke_lib:log_skipped_route_alert(Route, Msg),
+      Reason = "upstream topic not found in kafka",
+      ok = brucke_routes:add_skipped_route(Route, Reason),
       exit(normal);
     {_, none} ->
-      Msg = "downstream topic not found in kafka",
-      ok = brucke_lib:log_skipped_route_alert(Route, Msg),
+      Reason = "downstream topic not found in kafka",
+      ok = brucke_routes:add_skipped_route(Route, Reason),
       exit(normal);
     {UpstreamPartitionsCount, DownstreamPartitionCount} ->
       case validate_repartitioning_strategy(UpstreamPartitionsCount,
@@ -73,8 +73,8 @@ post_init({?GROUP_MEMBER_SUP, #route{} = Route}) ->
         ok ->
           Workers = route_worker_specs(Route, UpstreamPartitionsCount),
           {ok, {{one_for_one, 0, 1}, Workers}};
-        {error, Msg} ->
-          ok = brucke_lib:log_skipped_route_alert(Route, Msg),
+        {error, Reason} ->
+          ok = brucke_routes:add_skipped_route(Route, Reason),
           exit(normal)
       end
   end.
