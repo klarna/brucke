@@ -9,3 +9,7 @@
     * Fix discarded route formatting for healthcheck
 - 1.14.0
     * Support `required_acks` producer config
+- 1.14.1
+    * Upgrade brod from 3.2.0 to 3.3.0 to include the fix of heartbeat timeout issue for brod_group_coordinator
+    * Add discarded routes to discarded ets after initial validation
+
