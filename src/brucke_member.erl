@@ -48,9 +48,12 @@
 
 -define(SUBSCRIBER_RESTART_DELAY_SECONDS, 10).
 -define(DEAD(Ts), {dead_since, Ts}).
+-define(IGNORED(Ts), {ignored_since, Ts}).
 -record(subscriber, { partition    :: partition()
                     , begin_offset :: offset()
-                    , pid          :: pid() | ?DEAD(erlang:timestamp())
+                    , pid          :: pid()
+                                    | ?DEAD(erlang:timestamp())
+                                    | ?IGNORED(erlang:timestamp())
                     }).
 
 %%%_* APIs =====================================================================
@@ -215,7 +218,24 @@ handle_subscriber_down(#{ subscribers := Subscribers
     #subscriber{partition = Partition} = Subscriber ->
       lager:error("subscriber ~s:~p down, reason:\n~p",
                   [fmt_route(Route), Partition, Reason]),
-      NewSubscriber = Subscriber#subscriber{pid = ?DEAD(os:timestamp())},
+      NotPid =
+        case Reason of
+          normal ->
+            %% I don't do anything even when all subscribers are IGNORED.
+            %% The best thing to do here to to keep silent,
+            %% because if I exit here (even with 'normal' reason)
+            %% I will cause a group re-balance, then the deleted topic
+            %% will get assigned to other members in the group,
+            %% and cause a reassignment of ALL topic-partitions.
+            %% Then the very next member gets (a part of) this route assigned
+            %% will repeat this. i.e. the group will never be able to
+            %% be balanced and probably re-producing a lot of duplicated
+            %% messages due to a delayed commit.
+            ?IGNORED(os:timestamp());
+          _ ->
+            ?DEAD(os:timestamp())
+        end,
+      NewSubscriber = Subscriber#subscriber{pid = NotPid},
       NewSubscribers = lists:keyreplace(Partition, #subscriber.partition,
                                         Subscribers, NewSubscriber),
       State#{subscribers := NewSubscribers};
@@ -246,8 +266,7 @@ restart_dead_subscribers(Route, [#subscriber{ pid          = ?DEAD(Ts)
     false ->
       [S | restart_dead_subscribers(Route, Rest)]
   end;
-restart_dead_subscribers(Route, [#subscriber{pid = Pid} = S | Rest]) ->
-  true = is_pid(Pid), %% assert
+restart_dead_subscribers(Route, [#subscriber{} = S | Rest]) ->
   [S | restart_dead_subscribers(Route, Rest)].
 
 -spec fmt_route(route()) -> iodata().
