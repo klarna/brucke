@@ -1,8 +1,17 @@
-#!/bin/bash -e
+#!/bin/bash -eu
 
 THIS_DIR="$(cd "$(dirname "$0")" && pwd)"
 
-cd $THIS_DIR/../_build/default/lib/brod/docker
+BROD_VSN=$(erl -noinput -eval "
+                {ok, Configs} = file:consult(\"$THIS_DIR/../rebar.config\"),
+                {deps, Deps} = lists:keyfind(deps, 1, Configs),
+                {brod, Version} = lists:keyfind(brod, 1, Deps),
+                io:format(Version),
+                erlang:halt(0).")
+
+wget -O brod.zip https://github.com/klarna/brod/archive/$BROD_VSN.zip -o brod.zip
+unzip -qo brod.zip || true
+cd "./brod-$BROD_VSN/docker"
 
 ## maybe rebuild
 sudo docker-compose -f docker-compose-basic.yml build
