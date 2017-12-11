@@ -12,4 +12,6 @@
 - 1.14.1
     * Upgrade brod from 3.2.0 to 3.3.0 to include the fix of heartbeat timeout issue for brod_group_coordinator
     * Add discarded routes to discarded ets after initial validation
-
+- 1.14.3
+    * Handle deleted topic
+    * Upgrade to brod 3.3.4 --- 1.14.1 will not respect default beging_offset in yml config
