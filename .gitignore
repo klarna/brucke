@@ -23,3 +23,5 @@ x86_64/
 *.coverdata
 *.iml
 .idea/
+brod-*/
+brod.zip
