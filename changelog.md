@@ -15,3 +15,5 @@
 - 1.14.3
     * Handle deleted topic
     * Upgrade to brod 3.3.4 --- 1.14.1 will not respect default beging_offset in yml config
+- 1.14.4
+    * Ensure string (instead of integer array) in healthcheck JSON report

@@ -89,6 +89,7 @@ health_status() ->
 %% @doc Get upstream consumer group ID from rout options.
 %% If no `upstream_cg_id' configured, build it from cluster name.
 %% @end
+-spec get_cg_id(route_options()) -> cg_id().
 get_cg_id(Options) ->
   maps:get(upstream_cg_id, Options).
 
@@ -128,20 +129,31 @@ format_skipped_route({R, Reason}) when is_list(R) ->
   UpTopics = lists:map(fun(T) -> list_to_binary(T) end, proplists:get_value(upstream_topics, R, [])),
   DnClient = proplists:get_value(downstream_client, R),
   DnTopic = list_to_binary(proplists:get_value(downstream_topic, R, "")),
-  Filter = [upstream_client, upstream_topics, downstream_client, downstream_topic],
+  ExceptOptsKeys = [upstream_client, upstream_topics, downstream_client, downstream_topic],
   #{upstream => #{endpoints => endpoints_to_maps(brucke_config:get_client_endpoints(UpClient)),
                   topics => UpTopics},
     downstream => #{endpoints => endpoints_to_maps(brucke_config:get_client_endpoints(DnClient)),
                     topic => DnTopic},
     reason => Reason,
-    options => lists:filter(fun({K, _V}) -> not lists:member(K, Filter);
-                               (_) -> false
-                            end, R)};
+    options => format_raw_options(R, ExceptOptsKeys)
+   };
 format_skipped_route({#route{} = Route, Reason}) ->
   Map = format_route(Route),
   Map#{reason => Reason};
 format_skipped_route({X, Reason}) ->
   fmt("invalid route specification ~p\nreason:~s", [X, Reason]).
+
+%% @private
+format_raw_options([], _ExceptOptsKeys) -> [];
+format_raw_options([{K, V} | Rest], ExceptOptsKeys) ->
+  case lists:member(K, ExceptOptsKeys) of
+    true -> format_raw_options(Rest, ExceptOptsKeys);
+    false -> [{K, bin_str(V)} | format_raw_options(Rest, ExceptOptsKeys)]
+  end.
+
+%% @private
+bin_str(L) when is_list(L) -> erlang:iolist_to_binary(L);
+bin_str(X) -> X.
 
 %% @private
 endpoints_to_maps(Endpoints) ->
@@ -437,7 +449,7 @@ validate_upstream_client(ClientId, Topic) ->
 -spec mk_cg_id(brod:client_id(), raw_cg_id()) -> cg_id().
 mk_cg_id(ClientId, ?NO_CG_ID_OPTION) ->
   ClusterName = brucke_config:get_cluster_name(ClientId),
-  iolist_to_binary([ClusterName, "-brucke-cg"]);
+  erlang:iolist_to_binary([ClusterName, "-brucke-cg"]);
 mk_cg_id(_ClientId, A) when is_atom(A) ->
   erlang:atom_to_binary(A, utf8);
 mk_cg_id(_ClientId, Str) ->

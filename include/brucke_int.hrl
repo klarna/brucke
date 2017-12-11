@@ -30,7 +30,8 @@
                           | consumer_config
                           | max_partitions_per_group_member
                           | filter_module
-                          | filter_init_arg.
+                          | filter_init_arg
+                          | upstream_cg_id.
 
 %% Message repartitioning strategy.
 %% NOTE: For compacted topics, strict_p2p is the only choice.
