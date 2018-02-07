@@ -434,7 +434,7 @@ validate_upstream_topic(ClientId, RawCgId, Topic) ->
 -spec validate_upstream_client(brod:client_id(), topic_name()) ->
         validation_result().
 validate_upstream_client(ClientId, Topic) ->
-  case ets:lookup(?T_ROUTES, {ClientId, Topic}) of
+  case ets:lookup(?T_ROUTES, {ClientId, topic(Topic)}) of
     [] ->
       true;
     _ ->
@@ -579,9 +579,10 @@ duplicated_source_test() ->
                 , {downstream_topic, <<"topic_3">>}
                 ],
   DupeRoute1  = [ {upstream_client, client_1}
-                , {upstream_topics, <<"topic_1">>}
+                , {upstream_topics, "topic_1"}
                 , {downstream_client, client_1}
-                , {downstream_topic, <<"topic_3">>}
+                , {downstream_topic, topic_4}
+                , {upstream_cg_id, "different-than-ValidRoute1"}
                 ],
   ValidRoute3 = [ {upstream_client, client_2}
                 , {upstream_topics, <<"topic_1">>}
