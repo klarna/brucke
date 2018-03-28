@@ -235,7 +235,12 @@ validate_client(Client) ->
     {_, ClientId} = lists:keyfind(client, 1, Client),
     {_, ClusterName} = lists:keyfind(cluster, 1, Client),
     Config0 = proplists:get_value(config, Client, []),
-    Config = validate_client_config(ClientId, Config0),
+    Config1 = validate_client_config(ClientId, Config0),
+    %% Enable api version query by default
+    Config = case proplists:get_value(query_api_versions, Config1) of
+               undefined -> [{query_api_versions, true} | Config1];
+               _ -> Config1
+             end,
     {ensure_atom(ClientId),
      ensure_binary(ClusterName),
      Config}

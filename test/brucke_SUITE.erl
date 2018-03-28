@@ -29,6 +29,7 @@
 %% Test cases
 -export([ t_basic/1
         , t_filter/1
+        , t_filter_with_ts/1
         ]).
 
 -include_lib("common_test/include/ct.hrl").
@@ -90,11 +91,11 @@ t_basic(Config) when is_list(Config) ->
   ok = brod:produce_sync(Client, UPSTREAM, 0, <<"0">>, bin(V0)),
   ok = brod:produce_sync(Client, UPSTREAM, 0, <<"1">>, bin(V1)),
   ok = brod:produce_sync(Client, UPSTREAM, 0, <<"2">>, bin(V2)),
-  FetchFun = fun(Of) ->
-                 brod:fetch(?HOSTS, DOWNSTREAM, 0, Of, 1000, 10, 1000)
-             end,
+  FetchFun = fun(Of) -> fetch(DOWNSTREAM, 0, Of) end,
   Messages = fetch_loop(FetchFun, V0, Offset, _TryMax = 20, [], _Count = 3),
-  ?assertEqual([{0, V0}, {1, V1}, {2, V2}], Messages).
+  ?assertEqual([{0, V0},
+                {1, V1},
+                {2, V2}], Messages).
 
 %% Send 3 messages to upstream topic
 %% Expect them to be mirrored to downstream toicp with below filtering logic
@@ -116,16 +117,47 @@ t_filter(Config) when is_list(Config) ->
   ok = brod:produce_sync(Client, UPSTREAM, 0, <<"0">>, bin(V0)), %% as is
   ok = brod:produce_sync(Client, UPSTREAM, 0, <<"1">>, bin(V1)), %% ignore
   ok = brod:produce_sync(Client, UPSTREAM, 0, <<"2">>, bin(V2)), %% mutate
-  FetchFun = fun(Of) ->
-                 brod:fetch(?HOSTS, DOWNSTREAM, 0, Of, 1000, 10, 1000)
-             end,
+  FetchFun = fun(Of) -> fetch(DOWNSTREAM, 0, Of) end,
   Messages = fetch_loop(FetchFun, V0, Offset, _TryMax = 20, [], 2),
   ?assertEqual([{0, V0}, %% as is
                 %% 1 is discarded
                 {2, V2 + 1} %% transformed
                ], Messages).
 
+t_filter_with_ts(Config) when is_list(Config) ->
+  UPSTREAM = <<"brucke-filter-test-upstream">>,
+  DOWNSTREAM = <<"brucke-filter-test-downstream">>,
+  Client = client_1, %% configured in priv/brucke.yml
+  ok = brod:start_producer(Client, UPSTREAM, []),
+  {ok, Offset} = brod:resolve_offset(?HOSTS, DOWNSTREAM, 0, latest),
+  T0 = ts(),
+  K0 = <<"40">>,
+  I0 = uniq_int(),
+  V0 = [{T0, K0, bin(I0)}],
+  K1 = <<"41">>,
+  I1 = uniq_int(),
+  V1 = [{ts(), K1, bin(I1)}],
+  T2 = ts(),
+  K2 = <<"42">>,
+  I2 = uniq_int(),
+  V2 = [{T2, K2, bin(I2)}],
+  ok = brod:produce_sync(Client, UPSTREAM, 0, K0, V0), %% as is
+  ok = brod:produce_sync(Client, UPSTREAM, 0, K1, V1), %% ignore
+  ok = brod:produce_sync(Client, UPSTREAM, 0, K2, V2), %% mutate
+  FetchFun = fun(Of) -> fetch(DOWNSTREAM, 0, Of) end,
+  Messages = fetch_loop(FetchFun, I0, Offset, _TryMax = 20, [], 2),
+  ?assertEqual([{T0, 40, I0}, %% as is
+                %% 1 is discarded
+                {T2, 42, I2 + 1} %% transformed
+               ], Messages).
+
 %%%_* Help functions ===========================================================
+
+fetch(Topic, Partition, Offset) ->
+  Options = [{query_api_versions, true}],
+  brod:fetch(?HOSTS, Topic, Partition, Offset, 1000, 10, 1000, Options).
+
+ts() -> os:system_time() div 1000000.
 
 fetch_loop(_F, _V0, _Offset, N, Acc, C) when N =< 0 orelse C =< 0 -> Acc;
 fetch_loop(F, V0, Offset, N, Acc, Count) ->
@@ -134,20 +166,25 @@ fetch_loop(F, V0, Offset, N, Acc, Count) ->
       fetch_loop(F, V0, Offset, N - 1, Acc, Count);
     {ok, Msgs0} ->
       Msgs =
-        lists:filtermap(fun(#kafka_message{key = Key, value = Value}) ->
-                            case int(Value) >= V0 of
-                              true  -> {true, {int(Key), int(Value)}};
-                              false -> false
-                            end
-                        end, Msgs0),
-      ct:pal("received: ~p", [Msgs]),
+        lists:filtermap(
+          fun(#kafka_message{ ts_type = TsType
+                            , ts = Ts
+                            , key = Key
+                            , value = Value
+                            }) ->
+              case int(Value) >= V0 of
+                true when TsType =:= create andalso Ts > 0 ->
+                  {true, {Ts, int(Key), int(Value)}};
+                true ->
+                  {true, {int(Key), int(Value)}};
+                false -> false
+              end
+          end, Msgs0),
       C = length(Msgs),
       fetch_loop(F, V0, Offset + C, N - 1, Acc ++ Msgs, Count - C)
   end.
 
-uniq_int() ->
-  {M, S, Micro} = os:timestamp(),
-  (M * 1000000 + S) * 1000000 + Micro.
+uniq_int() -> os:system_time().
 
 bin(X) -> integer_to_binary(X).
 int(B) -> binary_to_integer(B).

@@ -81,7 +81,6 @@ stop(Pid) when is_pid(Pid) ->
 
 %%%_* Internal Functions =======================================================
 
-%% @private
 -spec loop(state()) -> no_return().
 loop(State) ->
   receive
@@ -89,7 +88,6 @@ loop(State) ->
       ?MODULE:loop(handle_msg(State, Msg))
   end.
 
-%% @private
 -spec handle_msg(state(), term()) -> state() | no_return().
 handle_msg(State, {subscribe, BeginOffset, Count}) ->
   subscribe(State, BeginOffset, Count);
@@ -113,7 +111,6 @@ handle_msg(_State, {_BrodConsumerPid,
 handle_msg(_State, Unknown) ->
   erlang:exit({unknown_message, Unknown}).
 
-%% @private
 -spec subscribe(state(), offset(), non_neg_integer()) -> state() | no_return().
 subscribe(#{ route              := Route
            , upstream_partition := UpstreamPartition
@@ -143,7 +140,6 @@ subscribe(#{ route              := Route
 subscribe(State, _BeginOffset, _UnknownRef) ->
   State.
 
-%% @private
 -spec handle_message_set(state(), pid(), #kafka_message_set{}) -> state().
 handle_message_set(#{ route              := Route
                     , upstream_cluster   := Cluster
@@ -159,7 +155,6 @@ handle_message_set(#{ route              := Route
   NewState = State#{high_wm_offset => HighWmOffset},
   do_handle_message_set(NewState, MsgSet, RouteOptions).
 
-%% @private
 do_handle_message_set(#{ route := Route
                        , pending_acks := PendingAcks
                        , filter_cb_state := CbState
@@ -175,9 +170,14 @@ do_handle_message_set(#{ route := Route
         } = Route,
   PartitionOrFun = maybe_repartition(Partition, RepartStrategy),
   FilterFun =
-    fun(Offset, Key, Value, CbStateIn) ->
-        brucke_filter:filter(FilterModule, Topic, Partition, Offset,
-                             Key, Value, CbStateIn)
+    fun(#kafka_message{ offset = Offset
+                      , key = Key
+                      , value = Value
+                      } = Msg, CbStateIn) ->
+        {FilterResult, NewCbState} =
+          brucke_filter:filter(FilterModule, Topic, Partition, Offset,
+                               Key, Value, CbStateIn),
+        {maybe_add_ts(Msg, FilterResult), NewCbState}
     end,
   ProduceFun =
     fun(Key, Value) ->
@@ -193,8 +193,51 @@ do_handle_message_set(#{ route := Route
                      , filter_cb_state := NewCbState
                      }).
 
-%% @private
--spec produce(fun((offset(), brod:key(), brod:value(), cb_state()) ->
+%% Add message timestamp received from upstream when possible.
+%% Return `false' or a `{Key, Value}' pair.
+%%
+%% `false' is an indicator of discard
+%%
+%% When Value is a `binary()', Key is used for both re-partition
+%% and the 'key' field in encoded message.
+%%
+%% If Value is a `[{InnerKey, Val} | {Ts, InnerKey, Val}]', then 'Key' is only
+%% used for re-partition, and the 'InnerKey's in the Value list are the key
+%% fields of encoded messages.
+maybe_add_ts(_Message, false) -> false; %% discard message
+maybe_add_ts(#kafka_message{ ts_type = create
+                           , ts = Ts
+                           , key = Key
+                           , value = Value
+                           }, FilterResult) when Ts > 0 ->
+  %% propagate create timestamp to downstream if timestamp type is 'create'
+  Kv = pick_kv({Key, Value}, FilterResult),
+  make_tkv(Ts, Kv);
+maybe_add_ts(#kafka_message{ key = Key
+                           , value = Value
+                           }, FilterResult) ->
+  %% either no timestamp or it's an 'append' type, discard timestamp
+  pick_kv({Key, Value}, FilterResult).
+
+%% Pick either the original (upstream) kv, or transfomation result.
+pick_kv(OriginalKv, true) -> OriginalKv;
+pick_kv(_OriginalKV, KV) -> KV.
+
+%% Ensure timestamp in kafka message encoder input.
+make_tkv(T, {K, V}) when is_binary(V) ->
+  %% filter transformed into a k-v pair, propagate the upstream ts
+  {K, [{T, K, V}]};
+make_tkv(T, {K, L}) when is_list(L) ->
+  %% filter transformed one message into a list of encode inputs
+  %% add ts to kv-pair items which doesn't have a timestamp
+  F = fun({KI, VI}) ->
+          {T, KI, VI};
+         ({_, _, _} = Input) ->
+          Input
+      end,
+  {K, lists:map(F, L)}.
+
+-spec produce(fun((brod:message(), cb_state()) ->
                     brucke_filter:filter_return()),
               fun((brod:key(), brod:value()) -> brod:call_ref()),
               [#kafka_message{}], pending_acks(),
@@ -202,15 +245,11 @@ do_handle_message_set(#{ route := Route
 produce(_FilterFun, _ProduceFun, [], PendingAcks, CbState) ->
   {lists:reverse(PendingAcks), CbState};
 produce(FilterFun, ProduceFun,
-        [#kafka_message{offset = Offset,
-                        key = Key,
-                        value = Value} | Rest],
+        [#kafka_message{offset = Offset} = Msg | Rest],
         PendingAcks0, CbState0) ->
-  {FilterResult, CbState} = FilterFun(Offset, Key, Value, CbState0),
+  {FilterResult, CbState} = FilterFun(Msg, CbState0),
   NewPending =
     case FilterResult of
-      true ->
-        ?UNACKED(ProduceFun(Key, Value), Offset);
       {NewKey, NewValue} ->
         ?UNACKED(ProduceFun(NewKey, NewValue), Offset);
       false ->
@@ -219,7 +258,6 @@ produce(FilterFun, ProduceFun,
   PendingAcks = [NewPending | PendingAcks0],
   produce(FilterFun, ProduceFun, Rest, PendingAcks, CbState).
 
-%% @private
 -spec handle_produce_reply(state(), #brod_produce_reply{}) -> state().
 handle_produce_reply(#{ pending_acks       := PendingAcks
                       , upstream_partition := UpstreamPartition
@@ -240,7 +278,6 @@ handle_produce_reply(#{ pending_acks       := PendingAcks
     lists:keyreplace(CallRef, 1, PendingAcks, ?ACKED(CallRef, Offset)),
   handle_acked(State#{pending_acks := NewPendingAcks}).
 
-%% @private
 -spec handle_acked(state()) -> state().
 handle_acked(#{ pending_acks       := PendingAcks
               , parent             := Parent
@@ -268,7 +305,6 @@ handle_acked(#{ pending_acks       := PendingAcks
   end,
   State#{pending_acks := NewPendingAcks}.
 
-%% @private
 -spec remove_acked_header(pending_acks(), false | offset()) ->
         {false | offset(), pending_acks()}.
 remove_acked_header([], LastOffset) ->
@@ -278,7 +314,7 @@ remove_acked_header([?UNACKED(_CallRef, _Offset) | _] = Pending, LastOffset) ->
 remove_acked_header([?ACKED(_CallRef, Offset) | Rest], _LastOffset) ->
   remove_acked_header(Rest, Offset).
 
-%% @private Return 'true' if ALL producers of unacked requests are still alive.
+%% Return 'true' if ALL producers of unacked requests are still alive.
 -spec check_producer(state()) -> state() | no_return().
 check_producer(#{pending_acks := Pendings} = State) ->
   Pred = fun(?UNACKED(#brod_call_ref{callee = ProducerPid}, _Offset)) ->
@@ -294,7 +330,6 @@ check_producer(#{pending_acks := Pendings} = State) ->
   _ = erlang:send_after(?CHECK_PRODUCER_DELAY, self(), ?CHECK_PRODUCER_MSG),
   NewState.
 
-%% @private
 -spec handle_consumer_down(state(), pid()) -> state().
 handle_consumer_down(#{consumer := Pid} = _State, Pid) ->
   %% maybe start a send_after retry timer
@@ -302,7 +337,7 @@ handle_consumer_down(#{consumer := Pid} = _State, Pid) ->
 handle_consumer_down(State, _UnknownPid) ->
   State.
 
-%% @private Return a partition or a partitioner function.
+%% Return a partition or a partitioner function.
 -spec maybe_repartition(partition(), repartitioning_strategy()) ->
         partition() | brod_partition_fun().
 maybe_repartition(Partition, strict_p2p) ->
@@ -316,16 +351,13 @@ maybe_repartition(_Partition, random) ->
     {ok, crypto:rand_uniform(0, PartitionCount)}
   end.
 
-%% @private
 msg_set_bytes(#kafka_message_set{messages = Messages}) ->
   msg_set_bytes(Messages, 0).
 
-%% @private
 msg_set_bytes([], Bytes) -> Bytes;
 msg_set_bytes([#kafka_message{key = K, value = V} | Rest], Bytes) ->
   msg_set_bytes(Rest, Bytes + msg_bytes(K) + msg_bytes(V)).
 
-%% @private
 msg_bytes(undefined)           -> 0;
 msg_bytes(B) when is_binary(B) -> erlang:size(B).
 
