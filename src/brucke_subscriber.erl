@@ -224,9 +224,6 @@ pick_kv(OriginalKv, true) -> OriginalKv;
 pick_kv(_OriginalKV, KV) -> KV.
 
 %% Ensure timestamp in kafka message encoder input.
-make_tkv(T, {K, V}) when is_binary(V) ->
-  %% filter transformed into a k-v pair, propagate the upstream ts
-  {K, [{T, K, V}]};
 make_tkv(T, {K, L}) when is_list(L) ->
   %% filter transformed one message into a list of encode inputs
   %% add ts to kv-pair items which doesn't have a timestamp
@@ -235,7 +232,10 @@ make_tkv(T, {K, L}) when is_list(L) ->
          ({_, _, _} = Input) ->
           Input
       end,
-  {K, lists:map(F, L)}.
+  {K, lists:map(F, L)};
+make_tkv(T, {K, V}) ->
+  %% filter transformed into a k-v pair, propagate the upstream ts
+  {K, [{T, K, V}]}.
 
 -spec produce(fun((brod:message(), cb_state()) ->
                     brucke_filter:filter_return()),
