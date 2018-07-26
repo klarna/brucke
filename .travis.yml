@@ -21,5 +21,6 @@ script:
   - make edoc
   - make test-env
   - make t
-  - make distclean
+  - make coveralls
+  - make cover
 

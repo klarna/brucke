@@ -91,5 +91,8 @@ vsn-check:
 
 .PHONY: hex-publish
 hex-publish: distclean
-	$(rebar_cmd) hex publish
+	@$(rebar_cmd) hex publish
 
+.PHONY: coveralls
+coveralls:
+	@$(rebar_cmd) coveralls send
