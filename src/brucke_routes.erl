@@ -52,9 +52,10 @@ init(Routes) when is_list(Routes) ->
   ets:new(?T_DISCARDED_ROUTES, [named_table, public, bag]),
   try
     ok = do_init_loop(Routes)
-  catch C : E ->
+  catch C : E ?BIND_STACKTRACE(Stack)  ->
+    ?GET_STACKTRACE(Stack),
     ok = destroy(),
-    erlang:C({E, erlang:get_stacktrace()})
+    erlang:C({E, Stack})
   end;
 init(Other) ->
   lager:emergency("Expecting list of routes, got ~P", [Other, 9]),
@@ -500,12 +501,13 @@ fmt(Fmt, Args) -> iolist_to_binary(io_lib:format(Fmt, Args)).
 
 no_ets_leak_test() ->
   clean_setup(),
-  L = ets:all(),
-  ?assertNot(lists:member(?T_ROUTES, L)),
+  ?assertNot(lists:member(?T_ROUTES, ets:all())),
+  ?assertNot(lists:member(?T_DISCARDED_ROUTES, ets:all())),
   try
     init([a|b])
   catch _ : _ ->
-    ?assertEqual(L, ets:all())
+    ?assertNot(lists:member(?T_ROUTES, ets:all())),
+    ?assertNot(lists:member(?T_DISCARDED_ROUTES, ets:all()))
   end.
 
 client_not_configured_test() ->

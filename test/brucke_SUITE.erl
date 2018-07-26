@@ -88,14 +88,16 @@ t_basic(Config) when is_list(Config) ->
   V0 = uniq_int(),
   V1 = uniq_int(),
   V2 = uniq_int(),
+  Headers = [{<<"foo">>, <<"bar">>}],
   ok = brod:produce_sync(Client, UPSTREAM, 0, <<"0">>, bin(V0)),
   ok = brod:produce_sync(Client, UPSTREAM, 0, <<"1">>, bin(V1)),
-  ok = brod:produce_sync(Client, UPSTREAM, 0, <<"2">>, bin(V2)),
+  ok = brod:produce_sync(Client, UPSTREAM, 0, <<"2">>, #{value => bin(V2),
+                                                         headers => Headers}),
   FetchFun = fun(Of) -> fetch(DOWNSTREAM, 0, Of) end,
   Messages = fetch_loop(FetchFun, V0, Offset, _TryMax = 20, [], _Count = 3),
-  ?assertEqual([{0, V0},
-                {1, V1},
-                {2, V2}], Messages).
+  ?assertMatch([{_, 0, V0},
+                {_, 1, V1},
+                {_, 2, V2, Headers}], Messages).
 
 %% Send 3 messages to upstream topic
 %% Expect them to be mirrored to downstream toicp with below filtering logic
@@ -119,9 +121,10 @@ t_filter(Config) when is_list(Config) ->
   ok = brod:produce_sync(Client, UPSTREAM, 0, <<"2">>, bin(V2)), %% mutate
   FetchFun = fun(Of) -> fetch(DOWNSTREAM, 0, Of) end,
   Messages = fetch_loop(FetchFun, V0, Offset, _TryMax = 20, [], 2),
-  ?assertEqual([{0, V0}, %% as is
+  V3 = V2 + 1, %% transformed
+  ?assertMatch([{_T0, 0, V0}, %% as is
                 %% 1 is discarded
-                {2, V2 + 1} %% transformed
+                {_T2, 2, V3} %% transformed
                ], Messages).
 
 t_filter_with_ts(Config) when is_list(Config) ->
@@ -167,16 +170,14 @@ fetch_loop(F, V0, Offset, N, Acc, Count) ->
     {ok, Msgs0} ->
       Msgs =
         lists:filtermap(
-          fun(#kafka_message{ ts_type = TsType
+          fun(#kafka_message{ key = Key
                             , ts = Ts
-                            , key = Key
                             , value = Value
+                            , headers = Headers
                             }) ->
               case int(Value) >= V0 of
-                true when TsType =:= create andalso Ts > 0 ->
-                  {true, {Ts, int(Key), int(Value)}};
-                true ->
-                  {true, {int(Key), int(Value)}};
+                true when Headers =:= [] -> {true, {Ts, int(Key), int(Value)}};
+                true -> {true, {Ts, int(Key), int(Value), Headers}};
                 false -> false
               end
           end, Msgs0),
