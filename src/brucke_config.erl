@@ -1,5 +1,5 @@
 %%%
-%%%   Copyright (c) 2016-2017 Klarna AB
+%%%   Copyright (c) 2016-2018 Klarna Bank AB (publ)
 %%%
 %%%   Licensed under the Apache License, Version 2.0 (the "License");
 %%%   you may not use this file except in compliance with the License.
@@ -50,6 +50,9 @@
         , get_cluster_name/1
         , all_clients/0
         , get_client_endpoints/1
+        ]).
+
+-export([ validate_client_config/2
         ]).
 
 -include("brucke_int.hrl").
@@ -280,6 +283,7 @@ exit_on_bad_endpoint(Bad) ->
                   "Got ~P", [Bad, 9]),
   exit(bad_endpoint).
 
+%% @hidden Exported for test
 validate_client_config(ClientId, Config) when is_list(Config) ->
   lists:map(fun(ConfigEntry) ->
               do_validate_client_config(ClientId, ConfigEntry)
@@ -289,7 +293,6 @@ validate_client_config(ClientId, Config) ->
                   [ClientId, Config]),
   exit(bad_client_config).
 
-%% @private
 do_validate_client_config(ClientId, {ssl, Options}) ->
   {ssl, validate_ssl_option(ClientId, Options)};
 do_validate_client_config(ClientId, {sasl, Options}) ->
@@ -301,7 +304,6 @@ do_validate_client_config(ClientId, Other) ->
                   "expecting kv-pair\nGot:~p", [ClientId, Other]),
   exit(bad_client_config_entry).
 
-%% @private
 -spec validate_ssl_option(client_id(), true | list()) ->
         boolean() | list() | none().
 validate_ssl_option(_ClientId, true) ->
@@ -320,7 +322,6 @@ validate_ssl_option(ClientId, SslOptions) ->
     false -> Options
   end.
 
-%% @private
 -spec validate_ssl_option(client_id(), list(),
                           cacertfile | certfile | keyfile) -> list() | none().
 validate_ssl_option(ClientId, SslOptions, OptName) ->
@@ -332,7 +333,6 @@ validate_ssl_option(ClientId, SslOptions, OptName) ->
       SslOptions
   end.
 
-%% @private
 -spec validate_ssl_file(client_id(), filename()) -> filename() | none().
 validate_ssl_file(ClientId, Filename) ->
   Path =
@@ -351,11 +351,21 @@ validate_ssl_file(ClientId, Filename) ->
   end.
 
 -spec validate_sasl_option(client_id(), list()) ->
-        {plain, binary(), binary()} | none().
+        {plain | scram_sha_256 | scram_sha_512, binary(), binary()} | none().
 validate_sasl_option(ClientId, SaslOptions) ->
+  Default = {mechanism, plain},
+  Mechanism = do_validate_sasl_option(ClientId, mechanism, SaslOptions ++ [Default]),
   Username = do_validate_sasl_option(ClientId, username, SaslOptions),
   Password = do_validate_sasl_option(ClientId, password, SaslOptions),
-  {plain, Username, Password}.
+  validate_sasl_mechanism(ClientId, Mechanism) andalso
+  {list_to_atom(Mechanism), list_to_binary(Username), list_to_binary(Password)}.
+
+validate_sasl_mechanism(_ClientId, "plain") -> true;
+validate_sasl_mechanism(_ClientId, "scram_sha_256") -> true;
+validate_sasl_mechanism(_ClientId, "scram_sha_512") -> true;
+validate_sasl_mechanism(ClientId, Other) ->
+  lager:emergency("Unknown sasl mechanism ~p is for client ~p", [Other, ClientId]),
+  exit(bad_sasl_mechanism).
 
 do_validate_sasl_option(ClientId, Option, SaslOptions) ->
   case lists:keyfind(Option, 1, SaslOptions) of
@@ -365,42 +375,6 @@ do_validate_sasl_option(ClientId, Option, SaslOptions) ->
       lager:emergency("SASL ~p is not specified or in wrong format for client ~p", [Option, ClientId]),
       exit(bad_sasl_credentials)
   end.
-
-%%%_* Tests ====================================================================
-
--ifdef(TEST).
-
--include_lib("eunit/include/eunit.hrl").
-
-validate_ssl_files_test() ->
-  %% cacertfile is mandatory, and bad file should trigger exception
-  ?assertException(exit, bad_ssl_file,
-                   validate_ssl_option(client_id,
-                                       [{cacertfile, "no-such-file"}])),
-  %% certfile is optional but providing a bad file should still
-  %% raise an exception
-  ?assertException(exit, bad_ssl_file,
-                   validate_ssl_option(client_id,
-                                       [{cacertfile, "priv/ssl/ca.crt"},
-                                        {certfile, "no-such-file"}])),
-  %% OK case
-  ?assertMatch([{cacertfile, _}],
-               validate_ssl_option(client_id,
-                                   [{cacertfile, "priv/ssl/ca.crt"}])),
-
-  ?assertMatch([{cacertfile, _}, {keyfile, _}, {certfile, _}],
-               validate_ssl_option(client_id,
-                                   [{cacertfile, "priv/ssl/ca.crt"},
-                                    {keyfile, "priv/ssl/client.key"},
-                                    {certfile, "priv/ssl/client.crt"}
-                                   ])),
-  ?assertEqual(true,
-               validate_ssl_option(client_id, [])),
-  ?assertEqual(true,
-               validate_ssl_option(client_id, true)).
-
-
--endif.
 
 %%%_* Emacs ====================================================================
 %%% Local Variables:
