@@ -3,5 +3,14 @@ Version = binary_to_list(binary:replace(Bin, <<"\n">>, <<>>)),
 {relx, RelxOptions0} = lists:keyfind(relx, 1, CONFIG),
 {release, {brucke, _}, Apps} = lists:keyfind(release, 1, RelxOptions0),
 RelxOptions = lists:keystore(release, 1, RelxOptions0, {release, {brucke, Version}, Apps}),
-lists:keystore(relx, 1, CONFIG, {relx, RelxOptions}).
-
+CONFIG1 = lists:keystore(relx, 1, CONFIG, {relx, RelxOptions}),
+case os:getenv("TRAVIS") of
+  "true" ->
+    JobId = os:getenv("TRAVIS_JOB_ID"),
+    [{coveralls_service_job_id, JobId},
+     {plugins, [coveralls]},
+     {coveralls_coverdata, "_build/test/cover/*.coverdata"},
+     {coveralls_service_name , "travis-ci"} | CONFIG1];
+  _ ->
+    CONFIG1
+end.
