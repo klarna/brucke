@@ -1,5 +1,6 @@
 #!/bin/bash -eu
 
+KAFKA_VERSION=1.1
 THIS_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 BROD_VSN=$(erl -noinput -eval "
@@ -11,20 +12,14 @@ BROD_VSN=$(erl -noinput -eval "
 
 wget -O brod.zip https://github.com/klarna/brod/archive/$BROD_VSN.zip -o brod.zip
 unzip -qo brod.zip || true
-cd "./brod-$BROD_VSN/docker"
+cd "./brod-$BROD_VSN/scripts"
 
-## maybe rebuild
-sudo docker-compose -f docker-compose-basic.yml build
-
-## stop everything first
-sudo docker-compose -f docker-compose-kafka-2.yml down || true
-
-## start the cluster
-sudo docker-compose -f docker-compose-kafka-2.yml up -d
+sudo KAFKA_VERSION=${KAFKA_VERSION} docker-compose -f docker-compose.yml down || true
+sudo KAFKA_VERSION=${KAFKA_VERSION} docker-compose -f docker-compose.yml up -d
 
 ## wait 4 secons for kafka to be ready
 n=0
-while [ "$(sudo docker exec kafka_1 bash -c '/opt/kafka/bin/kafka-topics.sh --zookeeper zookeeper --list')" != '' ]; do
+while [ "$(sudo docker exec kafka-1 bash -c '/opt/kafka/bin/kafka-topics.sh --zookeeper zookeeper --list')" != '' ]; do
   if [ $n -gt 4 ]; then
     echo "timedout waiting for kafka"
     exit 1
@@ -33,19 +28,32 @@ while [ "$(sudo docker exec kafka_1 bash -c '/opt/kafka/bin/kafka-topics.sh --zo
   sleep 1
 done
 
+function create_topic {
+  TOPIC_NAME="$1"
+  PARTITIONS="${2:-1}"
+  REPLICAS="${3:-1}"
+  CMD="/opt/kafka/bin/kafka-topics.sh --zookeeper zookeeper --create --partitions $PARTITIONS --replication-factor $REPLICAS --topic $TOPIC_NAME"
+  sudo docker exec kafka-1 bash -c "$CMD"
+}
+
 ## loop
-sudo docker exec kafka_1 bash -c "/opt/kafka/bin/kafka-topics.sh --zookeeper zookeeper --create --partitions 3 --replication-factor 2 --topic brucke-test-topic-1"
-sudo docker exec kafka_1 bash -c "/opt/kafka/bin/kafka-topics.sh --zookeeper zookeeper --create --partitions 3 --replication-factor 2 --topic brucke-test-topic-2"
-sudo docker exec kafka_1 bash -c "/opt/kafka/bin/kafka-topics.sh --zookeeper zookeeper --create --partitions 2 --replication-factor 2 --topic brucke-test-topic-3"
-sudo docker exec kafka_1 bash -c "/opt/kafka/bin/kafka-topics.sh --zookeeper zookeeper --create --partitions 3 --replication-factor 2 --topic brucke-test-topic-4"
-sudo docker exec kafka_1 bash -c "/opt/kafka/bin/kafka-topics.sh --zookeeper zookeeper --create --partitions 25 --replication-factor 2 --topic brucke-test-topic-5"
-sudo docker exec kafka_1 bash -c "/opt/kafka/bin/kafka-topics.sh --zookeeper zookeeper --create --partitions 13 --replication-factor 2 --topic brucke-test-topic-6"
+create_topic brucke-test-topic-1 3 2
+create_topic brucke-test-topic-2 3 2
+create_topic brucke-test-topic-3 2 2
+create_topic brucke-test-topic-4 3 2
+create_topic brucke-test-topic-5 25 2
+create_topic brucke-test-topic-6 13 2
 
 ## basic test
-sudo docker exec kafka_1 bash -c "/opt/kafka/bin/kafka-topics.sh --zookeeper zookeeper --create --partitions 1 --replication-factor 2 --topic brucke-basic-test-upstream"
-sudo docker exec kafka_1 bash -c "/opt/kafka/bin/kafka-topics.sh --zookeeper zookeeper --create --partitions 1 --replication-factor 2 --topic brucke-basic-test-downstream"
+create_topic brucke-basic-test-upstream 1 2
+create_topic brucke-basic-test-downstream 1 2
 
 ## filter test
-sudo docker exec kafka_1 bash -c "/opt/kafka/bin/kafka-topics.sh --zookeeper zookeeper --create --partitions 1 --replication-factor 2 --topic brucke-filter-test-upstream"
-sudo docker exec kafka_1 bash -c "/opt/kafka/bin/kafka-topics.sh --zookeeper zookeeper --create --partitions 1 --replication-factor 2 --topic brucke-filter-test-downstream"
+create_topic brucke-filter-test-upstream 1 2
+create_topic brucke-filter-test-downstream 1 2
 
+# this is to warm-up kafka group coordinator for deterministic in tests
+sudo docker exec kafka-1 /opt/kafka/bin/kafka-consumer-groups.sh --bootstrap-server localhost:9092 --new-consumer --group test-group --describe > /dev/null 2>&1
+
+# for kafka 0.11 or later, add sasl-scram test credentials
+sudo docker exec kafka-1 /opt/kafka/bin/kafka-configs.sh --zookeeper zookeeper:2181 --alter --add-config 'SCRAM-SHA-256=[iterations=8192,password=ecila],SCRAM-SHA-512=[password=ecila]' --entity-type users --entity-name alice

@@ -18,8 +18,8 @@
 
 -export([ init/3
         , init/4
-        , filter/6
         , filter/7
+        , filter/8
         ]).
 
 -export_type([ cb_state/0
@@ -30,6 +30,7 @@
 -include("brucke_int.hrl").
 
 -type cb_state() :: term().
+-type headers() :: kpro:headers().
 -type filter_result() :: boolean() | {brod:key(), brod:value()}.
 -type filter_return() :: {filter_result(), cb_state()}.
 
@@ -50,6 +51,7 @@
                  Offset :: brod:offset(),
                  Key :: brod:key(),
                  Value :: brod:value(),
+                 Headers :: headers(),
                  CbState :: cb_state()) -> filter_return().
 
 %% @doc Call callback module's init API
@@ -65,14 +67,14 @@ init(_UpstreamTopic, _UpstreamPartition, _InitArg) ->
 
 %% @doc Filter message set.
 -spec filter(module(), brod:topic(), brod:partition(), brod:offset(),
-             brod:key(), brod:value(), cb_state()) -> filter_return().
-filter(Module, Topic, Partition, Offset, Key, Value, CbState) ->
-  Module:filter(Topic, Partition, Offset, Key, Value, CbState).
+             brod:key(), brod:value(), headers(), cb_state()) -> filter_return().
+filter(Module, Topic, Partition, Offset, Key, Value, Headers, CbState) ->
+  Module:filter(Topic, Partition, Offset, Key, Value, Headers, CbState).
 
 %% @doc The default filter does nothing.
 -spec filter(brod:topic(), brod:partition(), brod:offset(),
-             brod:key(), brod:value(), cb_state()) -> filter_result().
-filter(_Topic, _Partition, _Offset, _Key, _Value, ?DEFAULT_STATE) ->
+             brod:key(), brod:value(), headers(), cb_state()) -> filter_result().
+filter(_Topic, _Partition, _Offset, _Key, _Value, _Headers, ?DEFAULT_STATE) ->
   {true, ?DEFAULT_STATE}.
 
 %%%_* Emacs ====================================================================

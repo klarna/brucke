@@ -74,9 +74,10 @@ init() ->
   try
     [Configs] = yamerl_constr:file(File, [{erlang_atom_autodetection, true}]),
     do_init(Configs)
-  catch C : E ->
+  catch C : E ?BIND_STACKTRACE(Stack) ->
+      ?GET_STACKTRACE(Stack),
       lager:emergency("failed to load brucke config file ~s: ~p:~p\n~p",
-                      [File, C, E, erlang:get_stacktrace()]),
+                      [File, C, E, Stack]),
       exit({bad_brucke_config, File})
   end.
 
@@ -158,9 +159,10 @@ do_init(Configs) ->
     exit : Reason ->
       ok = destroy(),
       erlang:exit(Reason);
-    error : Reason ->
+    error : Reason ?BIND_STACKTRACE(Stack) ->
+      ?GET_STACKTRACE(Stack),
       ok = destroy(),
-      erlang:exit({error, Reason, erlang:get_stacktrace()})
+      erlang:exit({error, Reason, Stack})
   end.
 
 -spec destroy() -> ok.
@@ -248,9 +250,10 @@ validate_client(Client) ->
      ensure_binary(ClusterName),
      Config}
   catch
-    error:Reason ->
+    error : Reason ?BIND_STACKTRACE(Stack) ->
+      ?GET_STACKTRACE(Stack),
       lager:emergency("Bad brod client config: ~P.\nreason=~p\nstack=~p",
-                      [Client, 9, Reason, erlang:get_stacktrace()]),
+                      [Client, 9, Reason, Stack]),
       exit(bad_client_config)
   end.
 

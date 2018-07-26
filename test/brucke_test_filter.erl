@@ -16,7 +16,7 @@
 -module(brucke_test_filter).
 
 -export([ init/3
-        , filter/6
+        , filter/7
         ]).
 
 -behaviour(brucke_filter).
@@ -26,7 +26,7 @@
 init(_UpstreamTopic, _DownstreamTopic, _InitArg) ->
   {ok, #state{}}.
 
-filter(_Topic, _Partition, _Offset, Key, Value, #state{} = State) ->
+filter(_Topic, _Partition, _Offset, Key, Value, _Headers, #state{} = State) ->
   Seqno = State#state.seqno,
   Res =
     case Seqno rem 3 of

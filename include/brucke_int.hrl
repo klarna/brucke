@@ -106,6 +106,15 @@
 -define(MX_LAGGING_OFFSET(Cluster, Topic, Partition, Offset),
         ?SET([Cluster, ?TOPIC(Topic), ?I2B(Partition), <<"lagging">>], Offset)).
 
+-ifdef(OTP_RELEASE).
+-define(BIND_STACKTRACE(Var), :Var).
+-define(GET_STACKTRACE(Var), ok).
+-else.
+-define(BIND_STACKTRACE(Var),).
+-define(GET_STACKTRACE(Var), Var = erlang:get_stacktrace()).
+-endif.
+
+
 -endif.
 
 %%%_* Emacs ====================================================================
