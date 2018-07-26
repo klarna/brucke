@@ -1,19 +1,23 @@
 kafka_clusters:
   local_cluster:
     - localhost:9092
-  local_cluster_ssl:
-    - localhost:9192
+  local_cluster_ssl_sasl:
+    - localhost:9094
 brod_clients:
   - client: client_1
     cluster: local_cluster
   - client: client_2
-    cluster: local_cluster_ssl
+    cluster: local_cluster_ssl_sasl
     config:
       ssl:
         # start with "priv/" or provide full path
         cacertfile: priv/ssl/ca.crt
         certfile: priv/ssl/client.crt
         keyfile: priv/ssl/client.key
+      sasl:
+        mechanism: scram_sha_256
+        username: alice
+        password: ecila
 routes:
   - upstream_client: client_1
     downstream_client: client_1

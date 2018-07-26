@@ -19,3 +19,8 @@
     * Ensure string (instead of integer array) in healthcheck JSON report
 - 1.14.5
     * Fix duplicate upstream topic validation
+- 1.15.0
+    * Upgrade brod to `3.6.1`
+    * Add scram sasl support
+    * Support latest message format (message timestamp and headers).
+
