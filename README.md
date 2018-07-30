@@ -35,6 +35,8 @@ Cluster names and client names must comply to erlang atom syntax.
             certfile: priv/ssl/client.crt
             keyfile: priv/ssl/client.key
           sasl:
+            # or 'plain' or 'scram_sha_256'
+            mechanism: scram_sha_512
             username: brucke
             password: secret
     routes:
@@ -54,7 +56,7 @@ Cluster names and client names must comply to erlang atom syntax.
 - `ssl` Either set to `true` or be specific about the cert/key files to use
         `cacertfile`, `certfile` and `keyfile`. In case the file paths start with `priv/`
         `brucke` will look in application `priv` dir (i.e. `code:priv_dir(brucke)`).
-- `sasl` Configure `username` and `password` for SASL PLAIN authentication.
+- `sasl` Configure SASL auth `mechanism`, `username` and `password` for SASL PLAIN authentication.
 - `query_api_versions` Set to `false` when connecting to kafka 0.9.x or earlier
 
 See more configs in `brod:start_client/4` API doc.
@@ -87,6 +89,19 @@ NOTE: For compacted topics, strict_p2p is the only choice.
 - strict_p2p: strictly map the upstream partition number to downstream partition number, worker will refuse to start if
 upstream and downstream topic has different number of partitions
 - random: randomly distribute upstream messages to downstream partitions
+
+### Message Transformation
+
+Depending on message format version in kafka broker, possible message formats from kafka are
+
+- Version 0: key-value without timestamp (kafka prior to `0.10`)
+- Version 1: key-value with timestamp (since kafka `0.10`)
+- Version 2: key-value with headers and timestamp (since kafka `0.11`)
+
+When downstream kafka supports lower version than upstream, unsupported fields are dropped.
+Otherwise messages are upgraded using default values as below:
+- Local host's OS time is used as default timestamp if upstream message message has no `create` timestamp
+- Empty list `[]` is used as default `headers` field for downstream message if upstream message has no `headers`
 
 ### Customized Message Filtering and or Transformation
 

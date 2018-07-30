@@ -19,7 +19,7 @@
 %% acknowledge finished items
 %% prune finished items (sucessive header items)
 %% implemented as gb_tree because we need to
-%% 1. lookup using key (offset)
+%% 1. lookup using key (kafka offset)
 %% 2. scan items starting from smallest
 -module(brucke_backlog).
 
