@@ -210,12 +210,13 @@ make_batch(#kafka_message{ ts_type = TsType
 make_batch(#kafka_message{ ts_type = TsType
                          , ts = Ts
                          }, {K, V}) ->
-  %% old filter return format k-v (without timestamp)
+  %% old version filter return format k-v (without timestamp)
   [mk_msg(K, V, resolve_ts(TsType, Ts), [])];
 make_batch(#kafka_message{}, {T, K, V}) ->
-  %% old filter return format t-k-v
+  %% old version filter return format t-k-v
   [mk_msg(K, V, T, [])];
 make_batch(#kafka_message{}, L) when is_list(L) ->
+  %% filter retruned a batch
   F = fun({K, V}) -> mk_msg(K, V, now_ts(), []);
          ({T, K, V}) -> mk_msg(K, V, T, []);
          (M) when is_map(M) -> M
@@ -302,7 +303,6 @@ check_producer(#{pending_acks := Pendings} = State) ->
 
 -spec handle_consumer_down(state(), pid()) -> state().
 handle_consumer_down(#{consumer := Pid} = _State, Pid) ->
-  %% maybe start a send_after retry timer
   erlang:exit(consumer_down);
 handle_consumer_down(State, _UnknownPid) ->
   State.
@@ -320,11 +320,12 @@ msg_set_bytes(#kafka_message_set{messages = Messages}) ->
   msg_set_bytes(Messages, 0).
 
 msg_set_bytes([], Bytes) -> Bytes;
-msg_set_bytes([#kafka_message{key = K, value = V} | Rest], Bytes) ->
-  msg_set_bytes(Rest, Bytes + msg_bytes(K) + msg_bytes(V)).
+msg_set_bytes([#kafka_message{key = K, value = V,
+                              headers = Headers} | Rest], Bytes) ->
+  msg_set_bytes(Rest, Bytes + size(K) + size(V) + header_bytes(Headers)).
 
-msg_bytes(undefined)           -> 0;
-msg_bytes(B) when is_binary(B) -> erlang:size(B).
+header_bytes([]) -> 0;
+header_bytes([{K, V} | Rest]) -> size(K) + size(V) + header_bytes(Rest).
 
 %%%_* Emacs ====================================================================
 %%% Local Variables:
