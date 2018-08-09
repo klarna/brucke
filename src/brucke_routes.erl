@@ -1,5 +1,5 @@
 %%%
-%%%   Copyright (c) 2016-2017 Klarna AB
+%%%   Copyright (c) 2016-2018 Klarna Bank AB (publ)
 %%%
 %%%   Licensed under the Apache License, Version 2.0 (the "License");
 %%%   you may not use this file except in compliance with the License.
@@ -36,7 +36,6 @@
 
 -define(NO_CG_ID_OPTION, ?undef).
 
--type validation_result() :: true | binary() | [validation_result()].
 -type raw_cg_id() :: ?undef | atom() | string() | binary().
 -type cg_id() :: binary().
 
@@ -186,8 +185,7 @@ do_init_loop([RawRoute | Rest]) ->
   end,
   do_init_loop(Rest).
 
--spec validate_route(raw_route()) ->
-                {ok, [route()]} | {error, validation_result()} | no_return().
+-spec validate_route(raw_route()) -> {ok, [route()]} | {error, [binary()]}.
 validate_route(RawRoute0) ->
   %% use maps to ensure
   %% 1. key-value list
@@ -209,7 +207,7 @@ validate_route(RawRoute0) ->
         true  -> ok = ensure_no_loopback(UpstreamTopics, DownstreamTopic);
         false -> ok
       end,
-      convert_to_route_record(RouteAsMap);
+      {ok, convert_to_route_record(RouteAsMap)};
     {error, Reasons} ->
       {error, Reasons}
   end.
@@ -249,7 +247,7 @@ convert_to_route_record(Route) ->
               , downstream = {DownstreamClientId, topic(DownstreamTopic)}
               , options = Options}
     end,
-  {ok, lists:map(MapF, topics(UpstreamTopics))}.
+  lists:map(MapF, topics(UpstreamTopics)).
 
 %% @private
 required_acks(all) -> -1;
@@ -342,9 +340,8 @@ schema() ->
     , upstream_cg_id => fun(_, _Name) -> true end
    }.
 
--spec apply_route_schema(raw_route(), #{}, #{}, #{}, validation_result()) ->
-                            {ok, #{}} | {error, validation_result()} |
-                            no_return().
+-spec apply_route_schema(raw_route(), map(), map(), map(), [binary()]) ->
+                            {ok, map()} | {error, [binary()]}.
 apply_route_schema([], Schema, Defaults, Result, Errors0) ->
   Errors1 =
     case maps:to_list(maps:without(maps:keys(Defaults), Schema)) of
@@ -388,8 +385,7 @@ apply_route_schema([{K, V} | Rest], Schema, Defaults, Result, Errors) ->
 %% {upstream, topic_1} -> {downstream, topic_2}
 %% {downstream, topic_2} -> {upstream, topic_1}
 %% you get a perfect data generator for load testing.
--spec ensure_no_loopback(topic_name() | [topic_name()], topic_name()) ->
-        ok | no_return().
+-spec ensure_no_loopback(topic_name() | [topic_name()], topic_name()) -> ok.
 ensure_no_loopback(UpstreamTopics, DownstreamTopic) ->
   case lists:member(topic(DownstreamTopic), topics(UpstreamTopics)) of
     true  -> throw(direct_loopback);
@@ -401,8 +397,7 @@ is_configured_client_id(ClientId) ->
   brucke_config:is_configured_client_id(ClientId).
 
 -spec validate_upstream_topics(brod:client_id(), raw_cg_id(),
-                               topic_name() | [topic_name()]) ->
-                                  validation_result().
+                               topic_name() | [topic_name()]) -> binary().
 validate_upstream_topics(_ClientId, _CgId, []) ->
   invalid_topic_name(upstream, []);
 validate_upstream_topics(ClientId, CgId, Topic) when ?IS_VALID_TOPIC_NAME(Topic) ->
@@ -416,7 +411,7 @@ validate_upstream_topics(ClientId, CgId, Topics0) when is_list(Topics0) ->
   end.
 
 -spec validate_upstream_topic(brod:client_id(), raw_cg_id(), topic_name()) ->
-        validation_result().
+        true | binary().
 validate_upstream_topic(ClientId, RawCgId, Topic) ->
   ClusterName = brucke_config:get_cluster_name(ClientId),
   CgId = mk_cg_id(ClientId, RawCgId),
@@ -429,11 +424,10 @@ validate_upstream_topic(ClientId, RawCgId, Topic) ->
           [Topic, CgId, ClusterName])
   end.
 
-%% @private Duplicated upstream topic is not allowed for the same client.
+%% Duplicated upstream topic is not allowed for the same client.
 %% Because one `brod_consumer' allows only one subscriber.
-%% @end
 -spec validate_upstream_client(brod:client_id(), topic_name()) ->
-        validation_result().
+        true | binary().
 validate_upstream_client(ClientId, Topic) ->
   case ets:lookup(?T_ROUTES, {ClientId, topic(Topic)}) of
     [] ->
@@ -443,10 +437,9 @@ validate_upstream_client(ClientId, Topic) ->
           [Topic, ClientId])
   end.
 
-%% @private Make upstream consumer group ID.
+%% Make upstream consumer group ID.
 %% If upstream_cg_id is not found in route option,
 %% build the ID from upstream cluster name (for backward compatibility).
-%% @end
 -spec mk_cg_id(brod:client_id(), raw_cg_id()) -> cg_id().
 mk_cg_id(ClientId, ?NO_CG_ID_OPTION) ->
   ClusterName = brucke_config:get_cluster_name(ClientId),
@@ -471,7 +464,7 @@ is_cg_duplication(ClusterName, CgId, Topic) ->
 
 %% @private Find the given top
 
--spec invalid_topic_name(upstream | downstream, any()) -> validation_result().
+-spec invalid_topic_name(upstream | downstream, any()) -> binary().
 invalid_topic_name(UpOrDown_stream, NameOrList) ->
   fmt("expecting ~p topic(s) to be (a list of) atom() | string() | binary()\n"
       "got: ~p", [UpOrDown_stream, NameOrList]).

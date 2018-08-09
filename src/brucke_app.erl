@@ -1,5 +1,5 @@
 %%%
-%%%   Copyright (c) 2016-2017 Klarna AB
+%%%   Copyright (c) 2016-2018 Klarna Bank AB (publ)
 %%%
 %%%   Licensed under the Apache License, Version 2.0 (the "License");
 %%%   you may not use this file except in compliance with the License.
@@ -51,7 +51,6 @@ start(_Type, _Args) ->
 stop(_State) ->
   ok.
 
-%% @private
 maybe_update_env() ->
   VarSpecs =
     [ {"BRUCKE_GRAPHITE_ROOT_PATH", graphite_root_path, binary}
@@ -63,13 +62,11 @@ maybe_update_env() ->
     ],
   maybe_update_env(VarSpecs).
 
-%% @private
 maybe_update_env([]) -> ok;
 maybe_update_env([{EnvVarName, AppVarName, Type} | VarSpecs]) ->
   ok = maybe_set_app_env(EnvVarName, AppVarName, Type),
   maybe_update_env(VarSpecs).
 
-%% @private
 maybe_set_app_env(EnvVarName, AppVarName, Type) ->
   EnvVar = os:getenv(EnvVarName),
   case EnvVar of
@@ -83,14 +80,12 @@ maybe_set_app_env(EnvVarName, AppVarName, Type) ->
   end,
   ok.
 
-%% @private
 transform_env_var_value(S, string) -> S;
 transform_env_var_value(S, binary) -> list_to_binary(S);
-transform_env_var_value(B, boolean) -> list_to_existing_atom(B);
 transform_env_var_value(I, integer) -> list_to_integer(I);
 transform_env_var_value(I, Fun) -> Fun(I).
 
-%% @private Parse comma or colon separated paths.
+%% Parse comma or colon separated paths.
 parse_paths(Paths) -> string:tokens(Paths, ":,").
 
 %% @private Add extra ebin paths to code path.

@@ -16,6 +16,7 @@
 
 -module(brucke_sup).
 -behaviour(supervisor3).
+-dialyzer(no_undefined_callbacks).
 
 -export([ start_link/0
         , init/1

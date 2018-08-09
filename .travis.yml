@@ -18,6 +18,7 @@ otp_release:
 script:
   - make vsn-check
   - make xref
+  - make dialyzer
   - make edoc
   - make test-env
   - make t

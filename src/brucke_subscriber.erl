@@ -25,7 +25,7 @@
 
 -type partition() :: brod:partition().
 -type offset() :: brod:offset().
--type state() :: #{}.
+-type state() :: map().
 -type pending_acks() :: brucke_backlog:backlog().
 -type cb_state() :: brucke_filter:cb_state().
 
@@ -181,7 +181,8 @@ do_handle_message_set(#{ route := Route
         {make_batch(Msg, FilterResult), NewCbState}
     end,
   ProduceFun =
-    fun(#{key := Key} = Msg, Cb) ->
+    fun(Msg, Cb) ->
+        Key = maps:get(key, Msg, <<>>),
         DownstreamPartition = partition(PartCnt, Partition, RepartStrategy, Key),
         {ok, ProducerPid} = brod:get_producer(DownstreamClientId, DownstreamTopic, DownstreamPartition),
         case brod:produce_cb(ProducerPid, Key, Msg, Cb) of
@@ -215,12 +216,14 @@ make_batch(#kafka_message{ ts_type = TsType
 make_batch(#kafka_message{}, {T, K, V}) ->
   %% old version filter return format t-k-v
   [mk_msg(K, V, T, [])];
-make_batch(#kafka_message{}, M) when is_map(M) ->
+make_batch(#kafka_message{ ts_type = TsType
+                         , ts = Ts
+                         }, M) when is_map(M) ->
   K = maps:get(key, M, <<>>),
   V = maps:get(value, M, <<>>),
-  T = maps:get(ts, M, now_ts()),
+  T = maps:get(ts, M, resolve_ts(TsType, Ts)),
   H = maps:get(headers, M, []),
-  mk_msg(K, V, T, H);
+  [mk_msg(K, V, T, H)];
 make_batch(#kafka_message{}, L) when is_list(L) ->
   %% filter retruned a batch
   F = fun({K, V}) -> mk_msg(K, V, now_ts(), []);
@@ -238,7 +241,7 @@ resolve_ts(create, Ts) when Ts > 0 -> Ts;
 resolve_ts(_, _) -> now_ts().
 
 -spec produce(fun((brod:message(), cb_state()) -> brod:batch_input()),
-              fun((brod:batch_input()) -> {ok, pid()}),
+              fun((brod:batch_input(), brod:produce_ack_cb()) -> {ok, pid()}),
               [#kafka_message{}], pending_acks(),
               cb_state()) -> {pending_acks(), cb_state()}.
 produce(_FilterFun, _ProduceFun, [], PendingAcks, CbState) ->

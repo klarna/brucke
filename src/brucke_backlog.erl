@@ -62,7 +62,7 @@ prune(Backlog) ->
   prune_loop(Backlog, false).
 
 %% @doc Get all producer pids.
--spec get_producers(backlog()) -> false | pid().
+-spec get_producers(backlog()) -> [pid()].
 get_producers(Backlog) ->
   [Pid || Refs <- gb_trees:values(Backlog), {Pid, _Ref} <- Refs].
 

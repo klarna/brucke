@@ -1,5 +1,5 @@
 %%%
-%%%   Copyright (c) 2016-2017 Klarna AB
+%%%   Copyright (c) 2016-2018 Klarna Bank AB (publ)
 %%%
 %%%   Licensed under the Apache License, Version 2.0 (the "License");
 %%%   you may not use this file except in compliance with the License.
@@ -31,7 +31,15 @@
 
 -type cb_state() :: term().
 -type headers() :: kpro:headers().
--type filter_result() :: boolean() | {brod:key(), brod:value()}.
+-type filter_result() :: boolean()
+                       | {brod:key(), brod:value()}
+                       | {brod:msg_ts(), brod:key(), brod:value()}
+                       | #{key => iodata(),
+                           value => iodata(),
+                           ts => brod:msg_ts(),
+                           headers => [{binary(), binary()}]
+                          }
+                       | [filter_result()].
 -type filter_return() :: {filter_result(), cb_state()}.
 
 -define(DEFAULT_STATE, []).
@@ -61,7 +69,7 @@ init(Module, UpstreamTopic, UpstreamPartition, InitArg) ->
   Module:init(UpstreamTopic, UpstreamPartition, InitArg).
 
 %% @doc The default filter does not do anything special.
--spec init(brod:topic(), brod:partition(), term()) -> ok.
+-spec init(brod:topic(), brod:partition(), term()) -> {ok, _}.
 init(_UpstreamTopic, _UpstreamPartition, _InitArg) ->
   {ok, ?DEFAULT_STATE}.
 
@@ -73,7 +81,7 @@ filter(Module, Topic, Partition, Offset, Key, Value, Headers, CbState) ->
 
 %% @doc The default filter does nothing.
 -spec filter(brod:topic(), brod:partition(), brod:offset(),
-             brod:key(), brod:value(), headers(), cb_state()) -> filter_result().
+             brod:key(), brod:value(), headers(), cb_state()) -> filter_return().
 filter(_Topic, _Partition, _Offset, _Key, _Value, _Headers, ?DEFAULT_STATE) ->
   {true, ?DEFAULT_STATE}.
 
