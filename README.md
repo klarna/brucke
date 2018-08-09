@@ -1,3 +1,5 @@
+[![Build Status](https://travis-ci.org/klarna/brucke.svg)](https://travis-ci.org/klarna/brucke) [![Coverage Status](https://coveralls.io/repos/github/klarna/brucke/badge.svg?branch=master)](https://coveralls.io/github/klarna/brucke?branch=master)
+
 # Brucke - Inter-cluster bridge of kafka topics
 Brucke is a Inter-cluster bridge of kafka topics powered by [Brod](https://github.com/klarna/brod)
 
