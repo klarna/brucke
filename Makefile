@@ -43,8 +43,8 @@ shell: profile=dev
 shell:
 	@$(rebar_cmd) shell --apps brod
 
-.PHONY: dialyze
-dialyze: compile
+.PHONY: dialyzer
+dialyzer: compile
 	@$(rebar_cmd) dialyzer
 
 .PHONY: cover

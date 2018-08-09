@@ -35,19 +35,24 @@ routes:
       - brucke-test-topic-1
     downstream_topic: brucke-test-topic-2
     repartitioning_strategy: strict_p2p
-    default_begin_offset: earliest
+    default_begin_offset: latest
+    upstream_cg_id: route-1
+
   - upstream_client: client_1
     downstream_client: client_1
     upstream_topics:
       - brucke-test-topic-2
     downstream_topic: brucke-test-topic-3
     repartitioning_strategy: key_hash
+    upstream_cg_id: route-2
+
   - upstream_client: client_2
     downstream_client: client_2
     upstream_topics:
       - brucke-test-topic-3
     downstream_topic: brucke-test-topic-1
     repartitioning_strategy: random
+    upstream_cg_id: route-3
 
   - upstream_client: client_1
     downstream_client: client_2
@@ -55,7 +60,8 @@ routes:
       - brucke-basic-test-upstream
     downstream_topic: brucke-basic-test-downstream
     repartitioning_strategy: strict_p2p
-    default_begin_offset: earliest
+    default_begin_offset: latest
+    upstream_cg_id: basic-test
 
   - upstream_client: client_3
     downstream_client: client_2
@@ -65,15 +71,5 @@ routes:
     repartitioning_strategy: random
     filter_module: brucke_test_filter
     filter_init_arg: ""
-    default_begin_offset: earliest
-
-  - upstream_client: client_3
-    downstream_client: client_2
-    upstream_topics:
-      - brucke-filter-test-upstream
-    downstream_topic: brucke-filter-test-downstream
-    repartitioning_strategy: strict_p2p
-    filter_module: brucke_test_filter
-    filter_init_arg: ""
-    default_begin_offset: earliest
-
+    default_begin_offset: latest
+    upstream_cg_id: brucke-filter-test-random

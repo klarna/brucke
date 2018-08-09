@@ -26,14 +26,24 @@
 init(_UpstreamTopic, _DownstreamTopic, _InitArg) ->
   {ok, #state{}}.
 
-filter(_Topic, _Partition, _Offset, Key, Value, _Headers, #state{} = State) ->
-  Seqno = State#state.seqno,
-  Res =
-    case Seqno rem 3 of
-      0 -> true; %% as is
-      1 -> false; %% discard
-      2 -> {Key, bin(int(Value) + 1)} %% transform
-    end,
+filter(_Topic, _Partition, _Offset, Key, Value, Headers,
+       #state{seqno = Seqno} = State) ->
+  Res = case Key of
+          <<"as_is">> ->
+            true;
+          <<"discard">> ->
+            false;
+          <<"increment">> ->
+            {Key, bin(int(Value) + 1)};
+          <<"append_state">> ->
+            #{ key => Key
+             , value => [Value, " ", integer_to_list(State#state.seqno)]
+             , headers => Headers
+             };
+          <<"split_value">> ->
+            Values = binary:split(Value, <<",">>, [global]),
+            [#{value => V} || V <- Values]
+        end,
   {Res, State#state{seqno = Seqno + 1}}.
 
 bin(X) -> integer_to_binary(X).

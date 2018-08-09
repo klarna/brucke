@@ -78,7 +78,7 @@
 -record(route, { upstream   :: upstream()
                , downstream :: downstream()
                , options    :: route_options()
-               , reason     :: binary()
+               , reason     :: undefined | binary()
                }).
 
 -type route() :: #route{}.
