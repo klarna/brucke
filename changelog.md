@@ -23,4 +23,6 @@
     * Upgrade brod to `3.6.1`
     * Add scram sasl support
     * Support magic-v2 message format (message timestamp and headers).
+- 1.15.1
+    * Allow single new format message as filter result
 
