@@ -1,5 +1,5 @@
 %%%
-%%%   Copyright (c) 2017 Klarna AB
+%%%   Copyright (c) 2017-2018 Klarna Bank AB (publ)
 %%%
 %%%   Licensed under the Apache License, Version 2.0 (the "License");
 %%%   you may not use this file except in compliance with the License.
@@ -30,6 +30,7 @@
 -export([ t_basic/1
         , t_filter/1
         , t_filter_with_ts/1
+        , t_random_dispatch/1
         ]).
 
 -include_lib("common_test/include/ct.hrl").
@@ -153,6 +154,19 @@ t_filter_with_ts(Config) when is_list(Config) ->
                 %% 1 is discarded
                 {T2, 42, I2 + 1} %% transformed
                ], Messages).
+
+t_random_dispatch(Config) when is_list(Config) ->
+  UPSTREAM = <<"brucke-filter-test-upstream">>,
+  DOWNSTREAM = <<"brucke-filter-test-downstream">>,
+  Client = client_1, %% configured in priv/brucke.yml
+  ok = brod:start_producer(Client, UPSTREAM, []),
+  {ok, Offset} = brod:resolve_offset(?HOSTS, DOWNSTREAM, 0, latest),
+  T = ts(),
+  Msg = #{ts => T, key => <<"50">>, value => <<"51">>},
+  ok = brod:produce_sync(Client, UPSTREAM, 0, <<>>, [Msg]),
+  FetchFun = fun(Of) -> fetch(DOWNSTREAM, 0, Of) end,
+  Messages = fetch_loop(FetchFun, 50, Offset, _TryMax = 20, [], 2),
+  ?assertMatch([{T, 50, 51}], Messages).
 
 %%%_* Help functions ===========================================================
 
