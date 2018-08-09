@@ -1,6 +1,8 @@
 kafka_clusters:
   local_cluster:
     - localhost:9092
+  local_cluster_ssl:
+    - localhost:9093
   local_cluster_ssl_sasl:
     - localhost:9094
 brod_clients:
@@ -18,6 +20,14 @@ brod_clients:
         mechanism: scram_sha_256
         username: alice
         password: ecila
+  - client: client_3
+    cluster: local_cluster_ssl
+    config:
+      ssl:
+        # start with "priv/" or provide full path
+        cacertfile: priv/ssl/ca.crt
+        certfile: priv/ssl/client.crt
+        keyfile: priv/ssl/client.key
 routes:
   - upstream_client: client_1
     downstream_client: client_1
@@ -47,7 +57,17 @@ routes:
     repartitioning_strategy: strict_p2p
     default_begin_offset: earliest
 
-  - upstream_client: client_1
+  - upstream_client: client_3
+    downstream_client: client_2
+    upstream_topics:
+      - brucke-filter-test-upstream
+    downstream_topic: brucke-filter-test-downstream
+    repartitioning_strategy: random
+    filter_module: brucke_test_filter
+    filter_init_arg: ""
+    default_begin_offset: earliest
+
+  - upstream_client: client_3
     downstream_client: client_2
     upstream_topics:
       - brucke-filter-test-upstream

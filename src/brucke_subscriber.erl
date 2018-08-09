@@ -168,7 +168,7 @@ do_handle_message_set(#{ route := Route
   #route{ upstream = {_UpstreamClientId, Topic}
         , downstream = {DownstreamClientId, DownstreamTopic}
         } = Route,
-  PartCnt = brod_client:get_partitions_count(DownstreamClientId, DownstreamTopic),
+  {ok, PartCnt} = brod_client:get_partitions_count(DownstreamClientId, DownstreamTopic),
   FilterFun =
     fun(#kafka_message{ offset = Offset
                       , key = Key
@@ -215,6 +215,12 @@ make_batch(#kafka_message{ ts_type = TsType
 make_batch(#kafka_message{}, {T, K, V}) ->
   %% old version filter return format t-k-v
   [mk_msg(K, V, T, [])];
+make_batch(#kafka_message{}, M) when is_map(M) ->
+  K = maps:get(key, M, <<>>),
+  V = maps:get(value, M, <<>>),
+  T = maps:get(ts, M, now_ts()),
+  H = maps:get(headers, M, []),
+  mk_msg(K, V, T, H);
 make_batch(#kafka_message{}, L) when is_list(L) ->
   %% filter retruned a batch
   F = fun({K, V}) -> mk_msg(K, V, now_ts(), []);
