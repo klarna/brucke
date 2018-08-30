@@ -1,3 +1,4 @@
+offsets_dets_path: "/tmp/brucke_offsets_ct.DETS"
 kafka_clusters:
   local_cluster:
     - localhost:9092
@@ -73,3 +74,13 @@ routes:
     filter_init_arg: ""
     default_begin_offset: latest
     upstream_cg_id: brucke-filter-test-random
+
+  - upstream_client: client_1
+    downstream_client: client_2
+    upstream_topics:
+      - brucke-filter-consumer-managed-offsets-test-upstream
+    downstream_topic: brucke-filter-consumer-managed-offsets-test-downstream
+    repartitioning_strategy: strict_p2p
+    default_begin_offset: latest
+    upstream_cg_id: brucke-filter-test-consumer-managed-offsets
+    offset_commit_policy: consumer_managed

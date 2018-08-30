@@ -28,6 +28,7 @@
 
 %% Test cases
 -export([ t_basic/1
+        , t_consumer_managed_offset/1
         , t_filter/1
         , t_filter_with_ts/1
         , t_random_dispatch/1
@@ -40,16 +41,18 @@
 
 -define(HOST, "localhost").
 -define(HOSTS, [{?HOST, 9092}]).
+-define(OFFSETS_TAB, brucke_offsets).
 
 %%%_* ct callbacks =============================================================
 
 suite() -> [{timetrap, {seconds, 30}}].
 
 init_per_suite(Config) ->
+  NewConfig = prepare_data_t_consumer_managed_offset(Config),
   _ = application:load(brucke),
   application:set_env(brucke, config_file, {priv, "brucke.yml"}),
   {ok, _} = application:ensure_all_started(brucke),
-  Config.
+  NewConfig.
 
 end_per_suite(_Config) ->
   application:stop(brucke),
@@ -98,6 +101,30 @@ t_basic(Config) when is_list(Config) ->
   ?assertMatch([{_, <<"v0">>},
                 {_, <<"v1">>},
                 {_, <<"v2">>, Headers}], Messages).
+
+t_consumer_managed_offset(Config) when is_list(Config) ->
+  %%% preconditions are set in prepare_data_t_consumer_managed_offset/1
+  Client = client_1,
+  UPSTREAM = <<"brucke-filter-consumer-managed-offsets-test-upstream">>,
+  DOWNSTREAM = <<"brucke-filter-consumer-managed-offsets-test-downstream">>,
+  DSOffsets = ?config({DOWNSTREAM, offsets}, Config),
+  [ok = wait_for_subscriber(Client, UPSTREAM, P) || {P, _} <- DSOffsets],
+  Result = [{P, Msg#kafka_message.value} || {P,O} <- DSOffsets, Msg <- fetch(DOWNSTREAM, P, O)],
+  Expected = [ {0, <<"4">>} % partition 0,
+             , {0, <<"5">>}
+             , {0, <<"6">>}
+             , {0, <<"7">>}
+             , {0, <<"8">>}
+             , {1, <<"15">>} % partition 1
+             , {1, <<"16">>}
+             , {1, <<"17">>}
+             , {1, <<"18">>}
+             , {2, <<"26">>} % partition 2
+             , {2, <<"27">>}
+             , {2, <<"28">>}
+             ],
+  ?assertEqual(Expected, Result).
+
 
 %% Send 3 messages to upstream topic
 %% Expect them to be mirrored to downstream toicp with filter/transformation
@@ -178,8 +205,10 @@ t_split_message(Config) when is_list(Config) ->
 
 %% wait for subsceriber of the upstream topic
 wait_for_subscriber(Client, Topic) ->
+  wait_for_subscriber(Client, Topic, 0).
+wait_for_subscriber(Client, Topic, Partition) ->
   F = fun() ->
-          {ok, Pid} = brod:get_consumer(Client, Topic, _Partition = 0),
+          {ok, Pid} = brod:get_consumer(Client, Topic, Partition),
           {error, {already_subscribed_by, _}} =
             brod_consumer:subscribe(Pid, fake_subscriber, []),
           exit(normal)
@@ -235,6 +264,49 @@ fetch_loop(F, Offset, N, Acc, Count) ->
 uniq_int() -> os:system_time().
 
 bin(X) -> integer_to_binary(X).
+
+prepare_data_t_consumer_managed_offset(Config) ->
+  Client = client_prepare_data,
+  UPSTREAM =   <<"brucke-filter-consumer-managed-offsets-test-upstream">>,
+  DOWNSTREAM = <<"brucke-filter-consumer-managed-offsets-test-downstream">>,
+  {ok,_} = application:ensure_all_started(brod),
+  Partitions = [0, 1, 2],
+  Messages = [4, 5, 6, 7, 8],
+  DSOffsets = resolve_offsets(DOWNSTREAM, Partitions),
+  USOffsets = resolve_offsets(UPSTREAM, Partitions),
+  ct:pal("PartitionOffsets for ~p are ~p", [UPSTREAM, USOffsets]),
+  case USOffsets of
+    [{0, 0}, {1, 0}, {2, 0}] -> % kafka is empty. this is new test env, produce test data
+      ct:pal("insert test msgs to topic ~p", [UPSTREAM]),
+      ok = brod:start_client(?HOSTS, Client),
+      ok = brod:start_producer(Client, UPSTREAM, _ProducerConfig = []),
+      [ ok = brod:produce_sync(Client, UPSTREAM, P, <<>>, integer_to_binary(P*10 + M)) ||
+        P <- Partitions,
+        M <- Messages],
+      ok = brod:stop_client(Client);
+    _ ->
+      skip
+  end,
+  ok = prepare_brucke_offsets_dets(UPSTREAM, USOffsets),
+  [{{DOWNSTREAM, offsets}, DSOffsets}  | Config].
+
+prepare_brucke_offsets_dets(Topic, PartitionOffsets) ->
+  {ok, ?OFFSETS_TAB} = dets:open_file(?OFFSETS_TAB,
+                                        [{file, "/tmp/brucke_offsets_ct.DETS"},
+                                         {ram_file, true}]),
+  {Partitions, _Offsets} = lists:unzip(PartitionOffsets),
+  TestOffsets = [-1, 0, 1], %% because brod coordinator will do offset+1
+  lists:foreach(fun({Partition, Offset}) ->
+                    ok = dets:insert(?OFFSETS_TAB, {{Topic, Partition}, Offset})
+                end, lists:zip(Partitions, TestOffsets)),
+  ok = dets:close(?OFFSETS_TAB).
+
+resolve_offsets(Topic, Partitions) ->
+  lists:map(fun(P) ->
+                {ok, Offset} = brod:resolve_offset(?HOSTS, Topic, P, latest),
+                {P, Offset}
+            end, Partitions).
+
 
 %%%_* Emacs ====================================================================
 %%% Local Variables:

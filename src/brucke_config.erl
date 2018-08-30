@@ -153,6 +153,11 @@ do_init(Configs) ->
       exit({?ETS, already_created})
   end,
   ?ETS = ets:new(?ETS, [named_table, protected, set]),
+
+  OffsetsDets = proplists:get_value(offsets_dets_path, Configs, ?DEFAULT_OFFSETS_DETS_PATH),
+
+  {ok, ?OFFSETS_TAB} = dets:open_file(?OFFSETS_TAB, [{file, OffsetsDets}, {ram_file, true}]),
+
   try
     init(Clusters, Clients, Routes)
   catch

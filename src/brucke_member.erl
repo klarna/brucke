@@ -70,8 +70,11 @@ is_healthy(Pid) ->
 
 -spec get_committed_offsets(pid(), [{topic(), partition()}]) ->
             {ok, [{{topic(), partition()}, offset()}]}.
-get_committed_offsets(_GroupMemberPid, _TopicPartitions) ->
-  erlang:exit({no_impl, get_committed_offsets}).
+get_committed_offsets(_GroupMemberPid, TopicPartitions) ->
+  Res = lists:map(fun(Key) ->
+                      dets:lookup(?OFFSETS_TAB, Key)
+                  end, TopicPartitions),
+  {ok, lists:append(Res)}.
 
 -spec assign_partitions(pid(), [brod:group_member()],
                         [{topic(), partition()}]) ->
@@ -101,7 +104,8 @@ init(Route) ->
 handle_info({post_init, #route{options = Options} = Route}, State) ->
   {UpstreamClientId, UpstreamTopic} = Route#route.upstream,
   {DownstreamClientId, DownstreamTopic} = Route#route.downstream,
-  GroupConfig = [{offset_commit_policy, commit_to_kafka_v2}
+  OffsetCommitPolicy = maps:get(offset_commit_policy, Options),
+  GroupConfig = [{offset_commit_policy, OffsetCommitPolicy}
                 ,{offset_commit_interval_seconds, 10}
                 ],
   ConsumerConfig = brucke_lib:get_consumer_config(Options),
@@ -201,7 +205,13 @@ handle_ack(#{ subscribers   := Subscribers
       NewSubscriber = Subscriber#subscriber{begin_offset = Offset + 1},
       NewSubscribers = lists:keyreplace(Partition, #subscriber.partition,
                                         Subscribers, NewSubscriber),
-      #route{upstream = {_UpstreamClientId, UpstreamTopic}} = Route,
+      #route{ upstream = {_UpstreamClientId, UpstreamTopic}
+             , options = Options
+            } = Route,
+
+      consumer_managed =:= maps:get(offset_commit_policy, Options)
+        andalso dets:insert(?OFFSETS_TAB, {{UpstreamTopic, Partition}, Offset}),
+
       ok = brod_group_coordinator:ack(Coordinator, GenerationId, UpstreamTopic,
                                       Partition, Offset),
       State#{subscribers := NewSubscribers};

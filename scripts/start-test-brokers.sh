@@ -52,6 +52,10 @@ create_topic brucke-basic-test-downstream 1 2
 create_topic brucke-filter-test-upstream 1 2
 create_topic brucke-filter-test-downstream 1 2
 
+## consumer managed offsets test
+create_topic brucke-filter-consumer-managed-offsets-test-upstream 3 2
+create_topic brucke-filter-consumer-managed-offsets-test-downstream 3 2
+
 # this is to warm-up kafka group coordinator for deterministic in tests
 sudo docker exec kafka-1 /opt/kafka/bin/kafka-consumer-groups.sh --bootstrap-server localhost:9092 --new-consumer --group test-group --describe > /dev/null 2>&1
 
