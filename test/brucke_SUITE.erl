@@ -269,6 +269,7 @@ prepare_data_t_consumer_managed_offset(Config) ->
   Client = client_prepare_data,
   UPSTREAM =   <<"brucke-filter-consumer-managed-offsets-test-upstream">>,
   DOWNSTREAM = <<"brucke-filter-consumer-managed-offsets-test-downstream">>,
+  ConsumerGroup = <<"brucke-filter-test-consumer-managed-offsets">>,
   {ok,_} = application:ensure_all_started(brod),
   Partitions = [0, 1, 2],
   Messages = [4, 5, 6, 7, 8],
@@ -287,17 +288,17 @@ prepare_data_t_consumer_managed_offset(Config) ->
     _ ->
       skip
   end,
-  ok = prepare_brucke_offsets_dets(UPSTREAM, USOffsets),
+  ok = prepare_brucke_offsets_dets(ConsumerGroup, UPSTREAM, USOffsets),
   [{{DOWNSTREAM, offsets}, DSOffsets}  | Config].
 
-prepare_brucke_offsets_dets(Topic, PartitionOffsets) ->
+prepare_brucke_offsets_dets(GroupId, Topic, PartitionOffsets) ->
   {ok, ?OFFSETS_TAB} = dets:open_file(?OFFSETS_TAB,
                                         [{file, "/tmp/brucke_offsets_ct.DETS"},
                                          {ram_file, true}]),
   {Partitions, _Offsets} = lists:unzip(PartitionOffsets),
   TestOffsets = [-1, 0, 1], %% because brod coordinator will do offset+1
   lists:foreach(fun({Partition, Offset}) ->
-                    ok = dets:insert(?OFFSETS_TAB, {{Topic, Partition}, Offset})
+                    ok = dets:insert(?OFFSETS_TAB, {{GroupId, Topic, Partition}, Offset})
                 end, lists:zip(Partitions, TestOffsets)),
   ok = dets:close(?OFFSETS_TAB).
 

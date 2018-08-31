@@ -130,8 +130,8 @@ or set system OS env variables `BRUCKE_FILTER_EBIN_PATHS`.
 ## Offsets DETS file
 You can config brucke where to start to consume by providing the none empty 'Offsets DETS file' when brucke starts.
 
-The records in the table should be:
-{ {Topic::binary(), Partition :: pos :: integer() }, Offset :: pos_integer() }.
+It should be set table and the record should be in following spec:
+{ {GroupID :: binary() , Topic :: binary(), Partition :: pos_integer() }, Offset :: pos_integer() }.
 
 `offsets_dets_path` specify the PATH to the offsets dets file which is used by 'Offset Commit Policy'.
 If file does not exists, brucke will create empty one and use it.
