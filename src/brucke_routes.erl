@@ -126,9 +126,9 @@ format_route(#route{} = R) ->
 %% @private
 format_skipped_route({R, Reason}) when is_list(R) ->
   UpClient = proplists:get_value(upstream_client, R),
-  UpTopics = lists:map(fun(T) -> list_to_binary(T) end, proplists:get_value(upstream_topics, R, [])),
+  UpTopics = lists:map(fun topic/1, proplists:get_value(upstream_topics, R, [])),
   DnClient = proplists:get_value(downstream_client, R),
-  DnTopic = list_to_binary(proplists:get_value(downstream_topic, R, "")),
+  DnTopic  = topic(proplists:get_value(downstream_topic, R, "")),
   ExceptOptsKeys = [upstream_client, upstream_topics, downstream_client, downstream_topic],
   #{upstream => #{endpoints => endpoints_to_maps(brucke_config:get_client_endpoints(UpClient)),
                   topics => UpTopics},
