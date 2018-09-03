@@ -315,17 +315,17 @@ schema() ->
            C =:= no_compression orelse
            C =:= gzip           orelse
            C =:= snappy         orelse
-           fmt("compression should be one of "
-               "[no_compression, gzip, snappy]\nGot~p", [C])
+             fmt("compression should be one of "
+                 "[no_compression, gzip, snappy]\nGot~p", [C])
        end
    , required_acks =>
        fun(_, A) ->
            A =:= all    orelse
-             A =:= leader orelse
-             A =:= none   orelse
-             A =:= -1     orelse
-             A =:= 1      orelse
-             A =:= 0      orelse
+           A =:= leader orelse
+           A =:= none   orelse
+           A =:= -1     orelse
+           A =:= 1      orelse
+           A =:= 0      orelse
              fmt("required_acks should be one of "
                  "[all, leader, none, -1, 1 0]\nGot~p", [A])
        end

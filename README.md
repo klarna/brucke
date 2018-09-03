@@ -84,9 +84,9 @@ NOTE: Currently this option is used for ALL partitions in upstream topic(s).
 In case there is a need to discard committed offsets, pick a new group ID.
 
 ### Offset Commit Policy
-The `Offset_commit_policy` specify how upstream consumer manages the offset per partition per topic.
+The `Offset_commit_policy` specify how upstream consumer manages the offset per topic-partition.
 Two values are available: `commit_to_kafka_v2` or `consumer_managed`.
-when `consumer_managed` is used, topic partitions offsets will be stored in dets (set). see "PATH to offsets DETS file".
+when `consumer_managed` is used, topic-partition offsets will be stored in dets (set). see "PATH to offsets DETS file".
 
 default: `commit_to_kafka_v2`
 
@@ -128,10 +128,13 @@ or set system OS env variables `BRUCKE_FILTER_EBIN_PATHS`.
 
 
 ## Offsets DETS file
-You can config brucke where to start to consume by providing the none empty 'Offsets DETS file' when brucke starts.
+You can config brucke where to start consuming by providing the none empty 'Offsets DETS file' when brucke starts.
 
 It should be set table and the record should be in following spec:
-{ {GroupID :: binary() , Topic :: binary(), Partition :: pos_integer() }, Offset :: pos_integer() }.
+
+```
+{ {GroupID :: binary() , Topic :: binary(), Partition :: non_neg_integer() }, Offset :: -1 | non_neg_integer() }.
+```
 
 `offsets_dets_path` specify the PATH to the offsets dets file which is used by 'Offset Commit Policy'.
 If file does not exists, brucke will create empty one and use it.
