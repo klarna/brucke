@@ -31,6 +31,7 @@
                           | max_partitions_per_group_member
                           | filter_module
                           | filter_init_arg
+                          | offset_commit_policy
                           | upstream_cg_id.
 
 %% Message repartitioning strategy.
@@ -60,6 +61,8 @@
 -define(DEFAULT_DEFAULT_BEGIN_OFFSET, latest).
 -define(DEFAULT_COMPRESSION, no_compression).
 -define(DEFAULT_REQUIRED_ACKS, -1).
+-define(DEFAULT_OFFSET_COMMIT_POLICY, commit_to_kafka_v2).
+-define(DEFAULT_OFFSETS_DETS_PATH, "/tmp/brucke_offsets.DETS").
 
 -type consumer_group_id() :: binary().
 -type hostname() :: string().
@@ -89,6 +92,8 @@
 -endif.
 
 -define(I2B(I), list_to_binary(integer_to_list(I))).
+
+-define(OFFSETS_TAB, brucke_offsets).
 
 %% counter and gauge
 -define(INC(Name, Value), brucke_metrics:inc(Name, Value)).

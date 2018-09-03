@@ -66,12 +66,25 @@ start_link(Route) -> gen_server:start_link(?MODULE, Route, []).
 is_healthy(Pid) ->
   gen_server:call(Pid, is_healthy).
 
+-spec get_cg_id(pid()) -> brod:group_id().
+get_cg_id(Pid) ->
+  gen_server:call(Pid, get_cg_id).
+
 %%%_* brod_group_member callbacks ==========================================
 
 -spec get_committed_offsets(pid(), [{topic(), partition()}]) ->
             {ok, [{{topic(), partition()}, offset()}]}.
-get_committed_offsets(_GroupMemberPid, _TopicPartitions) ->
-  erlang:exit({no_impl, get_committed_offsets}).
+get_committed_offsets(GroupMemberPid, TopicPartitions) ->
+  GroupId = get_cg_id(GroupMemberPid),
+  Res = lists:map(fun({Topic, Partition}) ->
+                      case dets:lookup(?OFFSETS_TAB, {GroupId, Topic, Partition}) of
+                        [{_K, V}] ->
+                          [{{Topic, Partition}, V}];
+                        _ ->
+                          []
+                      end
+                  end, TopicPartitions),
+  {ok, lists:append(Res)}.
 
 -spec assign_partitions(pid(), [brod:group_member()],
                         [{topic(), partition()}]) ->
@@ -101,7 +114,8 @@ init(Route) ->
 handle_info({post_init, #route{options = Options} = Route}, State) ->
   {UpstreamClientId, UpstreamTopic} = Route#route.upstream,
   {DownstreamClientId, DownstreamTopic} = Route#route.downstream,
-  GroupConfig = [{offset_commit_policy, commit_to_kafka_v2}
+  OffsetCommitPolicy = maps:get(offset_commit_policy, Options),
+  GroupConfig = [{offset_commit_policy, OffsetCommitPolicy}
                 ,{offset_commit_interval_seconds, 10}
                 ],
   ConsumerConfig = brucke_lib:get_consumer_config(Options),
@@ -115,6 +129,7 @@ handle_info({post_init, #route{options = Options} = Route}, State) ->
   _ = send_loopback_msg(1, restart_dead_subscribers),
   {noreply, State#{ coordinator => Pid
                   , route       => Route
+                  , cg_id       => ConsumerGroupId
                   , subscribers => []
                   , upstream_client_mref => erlang:monitor(process, UpstreamClientId)
                   , downstream_client_mref => erlang:monitor(process, DownstreamClientId)
@@ -138,6 +153,8 @@ handle_info(Info, State) ->
   lager:error("Unknown info: ~p", [Info]),
   {noreply, State}.
 
+handle_call(get_cg_id, _From, #{cg_id := GroupId} = State) ->
+  {reply, GroupId, State};
 handle_call(is_healthy, _From, State) ->
   #{subscribers := Subscribers} = State,
   Res = lists:all(fun(#subscriber{pid = Pid}) -> is_pid(Pid) end, Subscribers),
@@ -194,6 +211,7 @@ start_subscribers(#route{} = Route, Assignments) ->
 handle_ack(#{ subscribers   := Subscribers
             , coordinator   := Coordinator
             , generation_id := GenerationId
+            , cg_id         := GroupId
             , route         := Route
             } = State, Partition, Offset) ->
   case lists:keyfind(Partition, #subscriber.partition, Subscribers) of
@@ -201,7 +219,13 @@ handle_ack(#{ subscribers   := Subscribers
       NewSubscriber = Subscriber#subscriber{begin_offset = Offset + 1},
       NewSubscribers = lists:keyreplace(Partition, #subscriber.partition,
                                         Subscribers, NewSubscriber),
-      #route{upstream = {_UpstreamClientId, UpstreamTopic}} = Route,
+      #route{ upstream = {_UpstreamClientId, UpstreamTopic}
+             , options = Options
+            } = Route,
+
+      consumer_managed =:= maps:get(offset_commit_policy, Options)
+        andalso dets:insert(?OFFSETS_TAB, {{GroupId, UpstreamTopic, Partition}, Offset}),
+
       ok = brod_group_coordinator:ack(Coordinator, GenerationId, UpstreamTopic,
                                       Partition, Offset),
       State#{subscribers := NewSubscribers};

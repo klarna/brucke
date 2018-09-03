@@ -83,6 +83,13 @@ NOTE: Currently this option is used for ALL partitions in upstream topic(s).
 
 In case there is a need to discard committed offsets, pick a new group ID.
 
+### Offset Commit Policy
+The `Offset_commit_policy` specify how upstream consumer manages the offset per topic-partition.
+Two values are available: `commit_to_kafka_v2` or `consumer_managed`.
+when `consumer_managed` is used, topic-partition offsets will be stored in dets (set). see "PATH to offsets DETS file".
+
+default: `commit_to_kafka_v2`
+
 ### Repartitioning strategy
 
 NOTE: For compacted topics, strict_p2p is the only choice.
@@ -119,6 +126,23 @@ or set system OS env variables `BRUCKE_FILTER_EBIN_PATHS`.
 - `max_partitions_per_group_member`: default = 12, Number of partitions one group member should work on.
 - `required_acks`: `all` (default), `leader` or `none`
 
+
+## Offsets DETS file
+You can config brucke where to start consuming by providing the none empty 'Offsets DETS file' when brucke starts.
+
+It should be set table and the record should be in following spec:
+
+```
+{ {GroupID :: binary() , Topic :: binary(), Partition :: non_neg_integer() }, Offset :: -1 | non_neg_integer() }.
+```
+
+`offsets_dets_path` specify the PATH to the offsets dets file which is used by 'Offset Commit Policy'.
+If file does not exists, brucke will create empty one and use it.
+default: "/tmp/brucke_offsets.DETS"
+
+example:
+
+
 # Graphite reporting
 
 If the following app config variables are set, brucke will send metrics to a configured graphite endpoint:
@@ -139,7 +163,7 @@ Generate a release and package it into an rpm package:
 
     make rpm
 
-Brucke package installs release and creates corresponding systemd service. Config files are in /etc/brucke, OS env can 
+Brucke package installs release and creates corresponding systemd service. Config files are in /etc/brucke, OS env can
 be set at /etc/sysconfig/brucke, logs are in /var/log/brucke.
 
 Operating via systemctl:
@@ -156,7 +180,7 @@ Default port is 8080, customize via `http_port` config option or via `BRUCKE_HTT
 Returns `pong` if the application is up and running.
 
     GET /healthcheck
-Responds with status 200 if everything is OK, and 500 if something is not OK.  
+Responds with status 200 if everything is OK, and 500 if something is not OK.
 Also returns healthy and unhealthy routes in response body in JSON format.
 
 Example response:
@@ -328,4 +352,3 @@ Example response:
         "status": "failing",
         "unhealthy": []
     }
-

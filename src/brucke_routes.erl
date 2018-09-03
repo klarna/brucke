@@ -126,9 +126,9 @@ format_route(#route{} = R) ->
 %% @private
 format_skipped_route({R, Reason}) when is_list(R) ->
   UpClient = proplists:get_value(upstream_client, R),
-  UpTopics = lists:map(fun(T) -> list_to_binary(T) end, proplists:get_value(upstream_topics, R, [])),
+  UpTopics = lists:map(fun topic/1, proplists:get_value(upstream_topics, R, [])),
   DnClient = proplists:get_value(downstream_client, R),
-  DnTopic = list_to_binary(proplists:get_value(downstream_topic, R, "")),
+  DnTopic  = topic(proplists:get_value(downstream_topic, R, "")),
   ExceptOptsKeys = [upstream_client, upstream_topics, downstream_client, downstream_topic],
   #{upstream => #{endpoints => endpoints_to_maps(brucke_config:get_client_endpoints(UpClient)),
                   topics => UpTopics},
@@ -225,6 +225,7 @@ convert_to_route_record(Route) ->
    , compression := Compression
    , required_acks := RequiredAcks
    , upstream_cg_id := RawCgId
+   , offset_commit_policy := OffsetCommitPolicy
    } = Route,
   ProducerConfig = [{compression, Compression},
                     {required_acks, required_acks(RequiredAcks)}],
@@ -237,6 +238,7 @@ convert_to_route_record(Route) ->
      , producer_config => ProducerConfig
      , consumer_config => ConsumerConfig
      , upstream_cg_id => mk_cg_id(UpstreamClientId, RawCgId)
+     , offset_commit_policy => OffsetCommitPolicy
      },
   %% flatten out the upstream topics
   %% to simplify the config as if it's all
@@ -265,6 +267,7 @@ defaults() ->
    , filter_module                   => ?DEFAULT_FILTER_MODULE
    , filter_init_arg                 => ?DEFAULT_FILTER_INIT_ARG
    , upstream_cg_id                  => ?NO_CG_ID_OPTION
+   , offset_commit_policy            => ?DEFAULT_OFFSET_COMMIT_POLICY
    }.
 
 schema() ->
@@ -312,32 +315,38 @@ schema() ->
            C =:= no_compression orelse
            C =:= gzip           orelse
            C =:= snappy         orelse
-           fmt("compression should be one of "
-               "[no_compression, gzip, snappy]\nGot~p", [C])
+             fmt("compression should be one of "
+                 "[no_compression, gzip, snappy]\nGot~p", [C])
        end
-    , required_acks =>
-        fun(_, A) ->
-            A =:= all    orelse
-            A =:= leader orelse
-            A =:= none   orelse
-            A =:= -1     orelse
-            A =:= 1      orelse
-            A =:= 0      orelse
-            fmt("required_acks should be one of "
-                "[all, leader, none, -1, 1 0]\nGot~p", [A])
-        end
-    , filter_module =>
-        fun(_, Module) ->
-            case code:ensure_loaded(Module) of
-              {module, Module} ->
-                true;
-              {error, What} ->
-                fmt("filter module ~p is not found\nreason:~p\n",
-                    [Module, What])
-            end
-        end
-    , filter_init_arg => fun(_, _Arg) -> true end
-    , upstream_cg_id => fun(_, _Name) -> true end
+   , required_acks =>
+       fun(_, A) ->
+           A =:= all    orelse
+           A =:= leader orelse
+           A =:= none   orelse
+           A =:= -1     orelse
+           A =:= 1      orelse
+           A =:= 0      orelse
+             fmt("required_acks should be one of "
+                 "[all, leader, none, -1, 1 0]\nGot~p", [A])
+       end
+   , filter_module =>
+       fun(_, Module) ->
+           case code:ensure_loaded(Module) of
+             {module, Module} ->
+               true;
+             {error, What} ->
+               fmt("filter module ~p is not found\nreason:~p\n",
+                   [Module, What])
+           end
+       end
+   , filter_init_arg => fun(_, _Arg) -> true end
+   , upstream_cg_id => fun(_, _Name) -> true end
+   , offset_commit_policy => fun(_ , A) ->
+                                 A =:= commit_to_kafka_v2 orelse
+                                 (A =:= consumer_managed andalso undefined =/= dets:info(?OFFSETS_TAB)) orelse
+                                 fmt("offset_commit_policy is set to ~p, it should be 'commit_to_kafka_v2'"
+                                     "or 'consumer_managed'. ", [A])
+                             end
    }.
 
 -spec apply_route_schema(raw_route(), map(), map(), map(), [binary()]) ->
@@ -546,6 +555,7 @@ bad_routing_options_test() ->
            , [{required_acks, 2} | R0]
            , [{required_acks, x} | R0]
            , [{filter_module, x} | R0]
+           , [{offset_commit_policy, x} | R0]
            ],
   ok = init(Routes),
   ?assertEqual([], all()),
