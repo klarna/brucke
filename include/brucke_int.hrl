@@ -32,7 +32,9 @@
                           | filter_module
                           | filter_init_arg
                           | offset_commit_policy
-                          | upstream_cg_id.
+                          | upstream_cg_id
+                          | ratelimit_threshold
+                          | ratelimit_interval.
 
 %% Message repartitioning strategy.
 %% NOTE: For compacted topics, strict_p2p is the only choice.
@@ -55,6 +57,7 @@
          X =:= strict_p2p orelse
          X =:= random)).
 
+-define(RATELIMIT_DISABLED, 0).
 -define(DEFAULT_FILTER_MODULE, brucke_filter).
 -define(DEFAULT_FILTER_INIT_ARG, []).
 -define(MAX_PARTITIONS_PER_GROUP_MEMBER, 12).
@@ -63,6 +66,8 @@
 -define(DEFAULT_REQUIRED_ACKS, -1).
 -define(DEFAULT_OFFSET_COMMIT_POLICY, commit_to_kafka_v2).
 -define(DEFAULT_OFFSETS_DETS_PATH, "/tmp/brucke_offsets.DETS").
+-define(DEFAULT_RATELIMIT_INTEVAL,   ?RATELIMIT_DISABLED).
+-define(DEFAULT_RATELIMIT_THRESHOLD, 0).
 
 -type consumer_group_id() :: binary().
 -type hostname() :: string().
@@ -94,6 +99,7 @@
 -define(I2B(I), list_to_binary(integer_to_list(I))).
 
 -define(OFFSETS_TAB, brucke_offsets).
+-define(RATELIMITER_TAB, brucke_ratelimiter).
 
 %% counter and gauge
 -define(INC(Name, Value), brucke_metrics:inc(Name, Value)).

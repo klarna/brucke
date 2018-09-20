@@ -33,6 +33,9 @@
         , t_filter_with_ts/1
         , t_random_dispatch/1
         , t_split_message/1
+        , t_route_ratelimiter/1
+        , t_route_ratelimiter_change_rate/1
+        , t_route_ratelimiter_topic_rate/1
         ]).
 
 -include_lib("common_test/include/ct.hrl").
@@ -171,6 +174,86 @@ t_filter_with_ts(Config) when is_list(Config) ->
   Messages = fetch_loop(FetchFun, Offset, _TryMax = 20, [], 2),
   ?assertEqual([{T0, bin(I0)}, {T2, bin(I2 + 1)}], Messages).
 
+t_route_ratelimiter(Config) when is_list(Config) ->
+  %% Test rate 0 means pause
+  UPSTREAM = <<"brucke-ratelimiter-test-upstream">>,
+  DOWNSTREAM = <<"brucke-ratelimiter-test-downstream">>,
+  Client = client_1,
+  ok = wait_for_subscriber(client_3, UPSTREAM),
+  ok = brod:start_producer(Client, UPSTREAM, []),
+  [brod:produce_sync(Client, UPSTREAM, 0, << "foo" >>, << "bar" >>) || _V <- lists:seq(1,20)],
+  {ok, Offset} = brod:resolve_offset(?HOSTS, DOWNSTREAM, 0, latest),
+  ct:sleep(3000),
+  {ok, Offset2} = brod:resolve_offset(?HOSTS, DOWNSTREAM, 0, latest),
+  %%% in priv/brucke.yml rate is set to 0 msgs/s so no message should be delivered to downstream.
+  ?assertEqual(Offset2, Offset),
+  ok.
+
+t_route_ratelimiter_change_rate(Config) when is_list(Config) ->
+  %% Test we can change the rate via filter restapi
+  %% configured in priv/brucke.yml
+  UPSTREAM = <<"brucke-ratelimiter-test-upstream">>,
+  DOWNSTREAM = <<"brucke-ratelimiter-test-downstream">>,
+  Client = client_1,
+  Rid = {local_cluster_ssl, 'brucke-ratelimiter-test'},
+  ok = wait_for_subscriber(client_3, UPSTREAM),
+  ok = brod:start_producer(Client, UPSTREAM, []),
+  {ok, Offset} = brod:resolve_offset(?HOSTS, DOWNSTREAM, 0, latest),
+  ?assertEqual({1000, 0}, brucke_ratelimiter:get_rate(Rid)),
+  set_rate_limiter(Rid, 10),
+  ?assertEqual({1000, 10}, brucke_ratelimiter:get_rate(Rid)),
+  [brod:produce_sync(Client, UPSTREAM, 0, << "foo" >>, << "bar" >>) || _V <- lists:seq(1,100)],
+  timer:sleep(3000),
+  {ok, Offset2} = brod:resolve_offset(?HOSTS, DOWNSTREAM, 0, latest),
+  Diff = Offset2 - Offset,
+  ?assert(Diff < 40 orelse Diff > 20),
+  ok.
+
+t_route_ratelimiter_topic_rate(Config) when is_list(Config) ->
+  %% Test ratelimit is on topic, not per topic-partition.
+  %% configured in priv/brucke.yml
+  UPSTREAM = <<"brucke-ratelimiter-test-upstream">>,
+  DOWNSTREAM = <<"brucke-ratelimiter-test-downstream">>,
+  Client = client_1,
+  Rid = {local_cluster_ssl, 'brucke-ratelimiter-test'},
+  Partitions = [0, 1, 2],
+  GetLatestPartitionOffsets = fun() ->
+                                  lists:map(fun(P) ->
+                                                {ok, Offset} = brod:resolve_offset(?HOSTS, DOWNSTREAM, P, latest),
+                                                Offset
+                                            end, Partitions)
+                              end,
+
+  ok = wait_for_subscriber(client_3, UPSTREAM),
+  ok = brod:start_producer(Client, UPSTREAM, []),
+
+  %%% pause
+  set_rate_limiter(Rid, 0),
+  ct:sleep(1000),
+
+  ?assertEqual({1000, 0}, brucke_ratelimiter:get_rate(Rid)),
+
+  Offsets0 = GetLatestPartitionOffsets(),
+
+  [brod:produce_sync(Client, UPSTREAM, P, << "foo2" >>, << "bar" >>) || _V <- lists:seq(1, 100), P <- Partitions],
+
+  %% here we also change interval
+  set_rate_limiter(Rid, {100,10}),
+
+  ?assertEqual({100, 10}, brucke_ratelimiter:get_rate(Rid)),
+
+  ct:sleep(3000),
+
+  Offsets1 = GetLatestPartitionOffsets(),
+
+  Total = lists:foldl(fun({New, Old}, Acc)->
+                          Diff = New - Old,
+                          ?assert(Diff > 0),
+                          Acc + Diff
+                      end, 0, lists:zip(Offsets1, Offsets0)),
+  ?assert(Total > 200 andalso Total < 400),
+  ok.
+
 t_random_dispatch(Config) when is_list(Config) ->
   UPSTREAM = <<"brucke-filter-test-upstream">>,
   DOWNSTREAM = <<"brucke-filter-test-downstream">>,
@@ -308,6 +391,16 @@ resolve_offsets(Topic, Partitions) ->
                 {P, Offset}
             end, Partitions).
 
+set_rate_limiter(Rid, MsgPerSec) when is_integer(MsgPerSec)->
+  set_rate_limiter(Rid, {1000, MsgPerSec});
+set_rate_limiter({Cluster, Cgid}, {I, T}) ->
+  RatelimiterApiUrl = lists:flatten(io_lib:format("http://localhost:~p/plugins/ratelimiter/~s/~s",
+                                                  [brucke_app:http_port(), Cluster, Cgid])),
+  Body = jsone:encode([ {interval, I}
+                      , {threshold, T}]),
+  {ok, {{"HTTP/1.1",200,"OK"}, _, "\"ok\"" }} =
+    httpc:request(post, {RatelimiterApiUrl, [{"Accept", "application/json"}],
+                         "application/json", Body}, [], []).
 
 %%%_* Emacs ====================================================================
 %%% Local Variables:

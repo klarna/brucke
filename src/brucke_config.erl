@@ -42,6 +42,8 @@
 %%     default_begin_offset: earliest # optional
 %%     compression: no_compression # optional
 %%     required_acks: -1 # optional
+%%     ratelimit_interval:  1000 #(ms) optional
+%%     ratelimit_threshold: 0 #optional
 %%
 -module(brucke_config).
 

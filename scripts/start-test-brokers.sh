@@ -52,6 +52,10 @@ create_topic brucke-basic-test-downstream 1 2
 create_topic brucke-filter-test-upstream 1 2
 create_topic brucke-filter-test-downstream 1 2
 
+## ratelimiter filter test
+create_topic brucke-ratelimiter-test-upstream 3 2
+create_topic brucke-ratelimiter-test-downstream 3 2
+
 ## consumer managed offsets test
 create_topic brucke-filter-consumer-managed-offsets-test-upstream 3 2
 create_topic brucke-filter-consumer-managed-offsets-test-downstream 3 2

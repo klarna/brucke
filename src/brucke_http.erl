@@ -16,7 +16,17 @@
 -module(brucke_http).
 
 %% API
--export([init/0]).
+-export([ init/0
+        , register_plugin_handler/3]
+       ).
+
+-define(APP, brucke).
+-define(HTTP_LISTENER, http).
+
+-define(DEF_PATHS, [ {"/ping", brucke_http_ping_handler, []}
+                   , {"/", brucke_http_healthcheck_handler, []}
+                   , {"/healthcheck", brucke_http_healthcheck_handler, []}
+                   ]).
 
 init() ->
   case brucke_app:http_port() of
@@ -24,13 +34,13 @@ init() ->
       %% not configured, do not start anything
       ok;
     Port ->
-      Dispatch = cowboy_router:compile([{'_',
-                                         [ {"/ping", brucke_http_ping_handler, []}
-                                         , {"/", brucke_http_healthcheck_handler, []}
-                                         , {"/healthcheck", brucke_http_healthcheck_handler, []}
-                                         ]}]),
+      Paths = get_route_path(),
+      set_route_path(Paths),
+      Dispatch = cowboy_router:compile(routes(Paths)),
+
       lager:info("Starting http listener on port ~p", [Port]),
-      case cowboy:start_http(http, 8, [{port, Port}],
+
+      case cowboy:start_http(?HTTP_LISTENER, 8, [{port, Port}],
                                   [ {env, [{dispatch, Dispatch}]}
                                   , {onresponse, fun error_hook/4}]) of
         {ok, _Pid} ->
@@ -53,6 +63,26 @@ error_hook(Code, _Headers, _Body, Req) ->
 
 log_level(Code) when Code < 400 -> info;
 log_level(_Code) -> error.
+
+-spec register_plugin_handler(PluginPath::string(), Handler::module(), Opts :: any()) -> ok.
+register_plugin_handler(PluginPath, Handler, Opts) ->
+  Path = {"/plugins/" ++ PluginPath, Handler, Opts},
+  NewPaths = [ Path | get_route_path() ],
+  Dispatch = cowboy_router:compile(routes(NewPaths)),
+  cowboy:set_env(?HTTP_LISTENER, dispatch, Dispatch),
+  ok.
+
+-spec get_route_path() -> [cowboy_router:route_path()].
+get_route_path()->
+  application:get_env(?APP, route_paths, ?DEF_PATHS).
+
+-spec set_route_path([cowboy_router:route_path()]) -> ok.
+set_route_path(Paths)->
+  application:set_env(?APP, route_paths, Paths).
+
+-spec routes([cowboy_router:route_path()]) -> cowboy_router:routes().
+routes(PathLists) ->
+  [{'_', PathLists}].
 
 %%%_* Emacs ====================================================================
 %%% Local Variables:
