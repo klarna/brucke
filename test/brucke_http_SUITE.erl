@@ -29,6 +29,7 @@
 %% HTTP endpoint cases
 -export([ t_ping/1
         , t_healthcheck/1
+        , t_ratelimter_restapi/1
         ]).
 
 -include_lib("common_test/include/ct.hrl").
@@ -90,6 +91,39 @@ t_healthcheck(Config) when is_list(Config) ->
   {ok, {{"HTTP/1.1", ReturnCode, _State}, _Head, ReplyBody}} = httpc:request(URL),
   ?assertHttpOK(ReturnCode, ReplyBody),
   ok.
+
+t_ratelimter_restapi(Config) when is_list(Config) ->
+  Rid = 'local_cluster_ssl/brucke-ratelimiter-test',
+  wait_for_ratelimiter('rtl_local_cluster_ssl_brucke-ratelimiter-test'), %%this is internal name
+  RatelimiterApiUrl = lists:flatten(io_lib:format("http://localhost:~p/plugins/ratelimiter/~s",
+                                                  [brucke_app:http_port(), atom_to_list(Rid)])),
+  ct:pal("RatelimiterApiUrl is ~p",[RatelimiterApiUrl]),
+  [?assertMatch({ok, {{"HTTP/1.1",200,"OK"}, _, "\"ok\"" }},
+                httpc:request(post, {RatelimiterApiUrl, [{"Accept", "application/json"}],
+                                     "application/json", jsone:encode(Body)}, [], []))
+   || Body <- [ [ {interval,  "1000"}, {threshold, "1"} ]
+              , [ {interval,  "1000"}, {threshold, "1"} ]
+              , [ {interval,  "200"} ]
+              , [ {threshold,  "2"} ]
+              , [ {threshold,  2} ]
+              , [ {interval,  << "200" >> } ]
+              , [ {threshold,  0} ]
+              ]
+  ],
+  %%% set nothing
+  ?assertMatch({ok, {{"HTTP/1.1",200,"OK"}, _, "\"noargs\"" }},
+               httpc:request(post, {RatelimiterApiUrl, [{"Accept", "application/json"}],
+                                    "application/json", jsone:encode([])},  [], [])).
+
+
+wait_for_ratelimiter(Rid) ->
+   case whereis(Rid) of
+     Pid when is_pid(Pid) ->
+       ok;
+     _ ->
+       ct:sleep(500),
+       wait_for_ratelimiter(Rid)
+   end.
 
 %%%_* Emacs ====================================================================
 %%% Local Variables:

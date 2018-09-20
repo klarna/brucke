@@ -84,3 +84,16 @@ routes:
     default_begin_offset: latest
     upstream_cg_id: brucke-filter-test-consumer-managed-offsets
     offset_commit_policy: consumer_managed
+    ratelimit_interval: 0
+
+  - upstream_client: client_3
+    downstream_client: client_2
+    upstream_topics:
+      - brucke-ratelimiter-test-upstream
+    downstream_topic: brucke-ratelimiter-test-downstream
+    repartitioning_strategy: strict_p2p
+    default_begin_offset: latest
+    upstream_cg_id: brucke-ratelimiter-test
+    max_partitions_per_group_member: 1
+    ratelimit_interval: 1000
+    ratelimit_threshold: 0

@@ -140,8 +140,23 @@ It should be set table and the record should be in following spec:
 If file does not exists, brucke will create empty one and use it.
 default: "/tmp/brucke_offsets.DETS"
 
+## ratelimit
+Ratelimit the number of messages produced to downstream.
+
+`ratelimit_interval`  defines the interval in milliseconds,  default: 0 means disabled.
+`ratelimit_threshold` defines the threshold, set to 0 to pause.
+
+You can change these two settings in realtime via restapi.
+
 example:
 
+Limit the msg rate of consumer group: `group1` of cluster: `clusterA` to 10 msgs/s:
+
+```
+POST /plugins/ratelimiter/clusterA/group1
+{"interval": "100", "threshold", "1"}
+
+```
 
 # Graphite reporting
 

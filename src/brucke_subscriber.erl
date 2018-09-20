@@ -52,8 +52,22 @@ start_link(Route, UpstreamPartition, BeginOffset) ->
         } = Route,
   #{ filter_module := FilterModule
    , filter_init_arg := InitArg
+   , upstream_cg_id := CgId
+   , ratelimit_interval := RatelimitInteval
+   , ratelimit_threshold := RatelimitThreshold
    } = Options,
+
   UpstreamClusterName = brucke_config:get_cluster_name(UpstreamClientId),
+
+  RatelimiterName = brucke_ratelimiter:name_it([binary_to_list(UpstreamClusterName), binary_to_list(CgId)]),
+  Ratelimiter = case RatelimitInteval == ?RATELIMIT_DISABLED of
+                  true ->
+                    unlimited;
+                  false ->
+                    brucke_ratelimiter:ensure_started(RatelimiterName, {RatelimitInteval, RatelimitThreshold}),
+                    RatelimiterName
+                end,
+
   State = #{ route              => Route
            , upstream_partition => UpstreamPartition
            , parent             => Parent
@@ -65,7 +79,9 @@ start_link(Route, UpstreamPartition, BeginOffset) ->
           fun() ->
               {ok, CbState} = brucke_filter:init(FilterModule, UpstreamTopic,
                                                  UpstreamPartition, InitArg),
-              loop(State#{filter_cb_state => CbState})
+              loop(State#{ filter_cb_state => CbState
+                         , ratelimiter => Ratelimiter
+                         })
           end),
   Pid ! {subscribe, BeginOffset, 0},
   _ = erlang:send_after(?CHECK_PRODUCER_DELAY, Pid, ?CHECK_PRODUCER_MSG),
@@ -158,9 +174,11 @@ handle_message_set(#{ route              := Route
 do_handle_message_set(#{ route := Route
                        , pending_acks := PendingAcks
                        , filter_cb_state := CbState
+                       , ratelimiter := Ratelimiter
                        } = State, MsgSet, RouteOptions) ->
   RepartStrategy = brucke_lib:get_repartitioning_strategy(RouteOptions),
-  #{filter_module := FilterModule} = RouteOptions,
+  #{ filter_module := FilterModule
+   } = RouteOptions,
   #kafka_message_set{ topic     = Topic
                     , partition = Partition
                     , messages  = Messages
@@ -185,6 +203,7 @@ do_handle_message_set(#{ route := Route
         Key = maps:get(key, Msg, <<>>),
         DownstreamPartition = partition(PartCnt, Partition, RepartStrategy, Key),
         {ok, ProducerPid} = brod:get_producer(DownstreamClientId, DownstreamTopic, DownstreamPartition),
+        Ratelimiter =/= unlimited andalso ratelimit(Ratelimiter),
         case brod:produce_cb(ProducerPid, Key, Msg, Cb) of
           ok -> {ok, ProducerPid};
           {error, Reason} -> erlang:exit(Reason)
@@ -335,6 +354,9 @@ msg_set_bytes([#kafka_message{key = K, value = V,
 
 header_bytes([]) -> 0;
 header_bytes([{K, V} | Rest]) -> size(K) + size(V) + header_bytes(Rest).
+
+ratelimit(Ratelimiter) ->
+  brucke_ratelimiter:acquire(Ratelimiter).
 
 %%%_* Emacs ====================================================================
 %%% Local Variables:

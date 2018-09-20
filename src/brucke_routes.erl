@@ -86,7 +86,7 @@ health_status() ->
                         ets:tab2list(?T_DISCARDED_ROUTES)),
   #{healthy => Healthy, unhealthy => Unhealthy, discarded => Discarded}.
 
-%% @doc Get upstream consumer group ID from rout options.
+%% @doc Get upstream consumer group ID from route options.
 %% If no `upstream_cg_id' configured, build it from cluster name.
 %% @end
 -spec get_cg_id(route_options()) -> cg_id().
@@ -226,6 +226,8 @@ convert_to_route_record(Route) ->
    , required_acks := RequiredAcks
    , upstream_cg_id := RawCgId
    , offset_commit_policy := OffsetCommitPolicy
+   , ratelimit_interval := RatelimitInteval
+   , ratelimit_threshold := RatelimitThreshold
    } = Route,
   ProducerConfig = [{compression, Compression},
                     {required_acks, required_acks(RequiredAcks)}],
@@ -239,6 +241,8 @@ convert_to_route_record(Route) ->
      , consumer_config => ConsumerConfig
      , upstream_cg_id => mk_cg_id(UpstreamClientId, RawCgId)
      , offset_commit_policy => OffsetCommitPolicy
+     , ratelimit_interval => RatelimitInteval
+     , ratelimit_threshold => RatelimitThreshold
      },
   %% flatten out the upstream topics
   %% to simplify the config as if it's all
@@ -268,6 +272,8 @@ defaults() ->
    , filter_init_arg                 => ?DEFAULT_FILTER_INIT_ARG
    , upstream_cg_id                  => ?NO_CG_ID_OPTION
    , offset_commit_policy            => ?DEFAULT_OFFSET_COMMIT_POLICY
+   , ratelimit_interval              => ?DEFAULT_RATELIMIT_INTEVAL
+   , ratelimit_threshold             => ?DEFAULT_RATELIMIT_THRESHOLD
    }.
 
 schema() ->
@@ -347,6 +353,13 @@ schema() ->
                                  fmt("offset_commit_policy is set to ~p, it should be 'commit_to_kafka_v2'"
                                      "or 'consumer_managed'. ", [A])
                              end
+   , ratelimit_interval => fun(_, ?RATELIMIT_DISABLED) -> true;
+                              (_, A) when is_integer(A) andalso A > 0 -> true;
+                              (_,_) -> fmt("ratelimit_interval should be >= 0", [])
+                           end
+   , ratelimit_threshold => fun(_, A) when is_integer(A) andalso A >= 0 -> true;
+                               (_, _) -> fmt("ratelimit_threshold should be >= 0", [])
+                           end
    }.
 
 -spec apply_route_schema(raw_route(), map(), map(), map(), [binary()]) ->
@@ -556,6 +569,9 @@ bad_routing_options_test() ->
            , [{required_acks, x} | R0]
            , [{filter_module, x} | R0]
            , [{offset_commit_policy, x} | R0]
+           , [{ratelimit_threshold, x} | R0]
+           , [{ratelimit_threshold, -1} | R0]
+           , [{ratelimit_interval,  -1} | R0]
            ],
   ok = init(Routes),
   ?assertEqual([], all()),

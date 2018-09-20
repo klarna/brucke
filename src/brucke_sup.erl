@@ -43,6 +43,7 @@ init(?ROOT_SUP) ->
   ok = brucke_http:init(),
   ok = brucke_config:init(),
   ok = brucke_metrics:init(),
+  ok = brucke_ratelimiter:init(),
   AllClients = brucke_config:all_clients(),
   lists:foreach(
     fun({ClientId, Endpoints, ClientConfig}) ->
