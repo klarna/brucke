@@ -13,31 +13,34 @@
 %%%   See the License for the specific language governing permissions and
 %%%   limitations under the License.
 %%%
--module(brucke_http_healthcheck_handler).
+-module(brucke_ratelimiter_filter_http_handler).
 
 -export([ init/3
+        , allowed_methods/2
+        , content_types_accepted/2
         , handle_request/2
         , content_types_provided/2
         ]).
-
 
 -include("brucke_int.hrl").
 
 init(_Transport, _Req, []) ->
   {upgrade, protocol, cowboy_rest}.
 
+allowed_methods(Req, State) ->
+  {[<< "POST" >>, << "PUT" >>], Req, State}.
+
+content_types_accepted(Req, State) ->
+  {[{{<<"application">>, <<"json">>, []}, handle_request}], Req, State}.
+
 content_types_provided(Req, State) ->
-  {[{<<"application/json">>, handle_request}], Req, State}.
+  {[{{<<"application">>, <<"json">>, []}, handle_request}], Req, State}.
 
 handle_request(Req, State) ->
-  HealthStatus0 = brucke_routes:health_status(),
-  Status = get_status_string(HealthStatus0),
-  HealthStatus = maps:put(status, Status, HealthStatus0),
-  {jsone:encode(HealthStatus), Req, State}.
-
-%% @private
-get_status_string(#{unhealthy := [], discarded := []}) -> <<"ok">>;
-get_status_string(_HealthStatus) -> <<"failing">>.
+  {ok, Body, _Req2} = cowboy_req:body(Req),
+  Rates = jsone:decode(Body,  [{object_format, proplist}]),
+  Res = [brucke_ratelimiter_filter:set_rate(K, V) || {K, V} <- Rates],
+  {true, cowboy_req:set_resp_body(jsone:encode(Res), Req), State}.
 
 %%%_* Emacs ====================================================================
 %%% Local Variables:
