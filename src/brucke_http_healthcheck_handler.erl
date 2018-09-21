@@ -15,17 +15,13 @@
 %%%
 -module(brucke_http_healthcheck_handler).
 
--export([ init/2
-        , init/3
+-export([ init/3
         , handle_request/2
         , content_types_provided/2
         ]).
 
 
 -include("brucke_int.hrl").
-
-init(Req, Opts) ->
-  {cowboy_rest, Req, Opts}.
 
 init(_Transport, _Req, []) ->
   {upgrade, protocol, cowboy_rest}.
