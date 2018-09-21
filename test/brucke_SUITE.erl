@@ -393,7 +393,8 @@ resolve_offsets(Topic, Partitions) ->
 
 
 set_rate_limiter(Topic, Rate) ->
-  RatelimiterApiUrl = lists:flatten(io_lib:format("http://localhost:~p/filter/ratelimiter", [brucke_app:http_port()])),
+  RatelimiterApiUrl = lists:flatten(io_lib:format("http://localhost:~p/filter/ratelimiter",
+                                                  [brucke_app:http_port()])),
   {ok, {{"HTTP/1.1",200,"OK"}, _, "[true]" }} =
     httpc:request(post, {RatelimiterApiUrl, [{"Accept", "application/json"}],
                          "application/json", jsone:encode([{Topic, integer_to_binary(Rate)}])}, [], []).

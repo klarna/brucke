@@ -16,7 +16,9 @@
 -module(brucke_http).
 
 %% API
--export([init/0, register_filter_handler/3]).
+-export([ init/0
+        , register_filter_handler/3]
+       ).
 
 -define(APP, brucke).
 -define(HTTP_LISTENER, http).
