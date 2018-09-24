@@ -30,8 +30,7 @@ eunit:
 
 .PHONY: ct
 ct:
-	@$(rebar_cmd) ct --suite=test/brucke_SUITE
-	@$(rebar_cmd) ct --suite=test/brucke_http_SUITE
+	@$(rebar_cmd) ct
 
 .PHONY: edoc
 edoc: profile=edown
