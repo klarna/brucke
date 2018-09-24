@@ -92,7 +92,7 @@ routes:
     downstream_topic: brucke-ratelimiter-filter-test-downstream
     repartitioning_strategy: strict_p2p
     filter_module: brucke_ratelimiter_filter
-    filter_init_arg: [0]
+    filter_init_arg: [rlt1, 0]
     default_begin_offset: latest
     upstream_cg_id: brucke-ratelimiter-filter-test
     max_partitions_per_group_member: 1

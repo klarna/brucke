@@ -33,29 +33,28 @@
 
 -define(TAB, ?MODULE).
 
-init(UpstreamTopic, _UpstreamPartition = 0 , [MsgRate]) ->
+init(_UpstreamTopic, _UpstreamPartition = 0 , [FilterId, MsgRate]) ->
   new_tab(),
   ok = start_http(),
-  Resetter = resetter_registerd_name(UpstreamTopic),
-  spawn_link(?MODULE, resetter, [UpstreamTopic, MsgRate]),
+  Resetter = resetter_registerd_name(FilterId),
+  spawn_link(?MODULE, resetter, [Resetter, MsgRate]),
   {ok, #cb_state{ resetter = Resetter }};
 
-init(UpstreamTopic, _UpstreamPartition, [_MsgRate]) ->
-  Resetter = resetter_registerd_name(UpstreamTopic),
+init(_UpstreamTopic, _UpstreamPartition, [FilterId, _MsgRate]) ->
+  Resetter = resetter_registerd_name(FilterId),
   link(wait_for_resetter(Resetter)),
   {ok, #cb_state{ resetter = Resetter }}.
 
-filter(Topic, _Partition, _Offset, _Key, _Val, _Headers, #cb_state{resetter = Resetter} = S) ->
-  maybe_block(Topic, Resetter),
+filter(_Topic, _Partition, _Offset, _Key, _Val, _Headers, #cb_state{resetter = Resetter} = S) ->
+  maybe_block(Resetter),
   {true, S}.
 
-resetter(Topic, Rate) ->
-  Name = resetter_registerd_name(Topic),
-  ets:insert(?TAB, {{setting,Topic}, Rate}),
-  ets:insert(?TAB, {Topic, Rate}),
+resetter(Name, Rate) ->
+  ets:insert(?TAB, {{setting, Name}, Rate}),
+  ets:insert(?TAB, {Name, Rate}),
   register(Name, self()),
   timer:send_interval(1000, self(), reset),
-  resetter_loop(Topic, []).
+  resetter_loop(Name, []).
 
 resetter_loop(Key, PidsBlocked) ->
   receive
@@ -69,22 +68,24 @@ resetter_loop(Key, PidsBlocked) ->
       resetter_loop(Key, [Pid | PidsBlocked])
   end.
 
-set_rate(Topic, Rate) when is_binary(Rate) ->
-  set_rate(Topic, list_to_integer(binary_to_list(Rate)));
-set_rate(Topic, Rate) when is_binary(Topic) andalso is_integer(Rate) ->
-  ets:insert(?TAB, {{setting, Topic}, Rate}).
+set_rate(FilterId, Rate) when is_binary(Rate) ->
+  set_rate(FilterId, binary_to_integer(Rate));
+set_rate(FilterId, Rate) when is_binary(FilterId) andalso is_integer(Rate) ->
+  ets:insert(?TAB, {{setting, list_to_atom(binary_to_list(FilterId))}, Rate}).
 
-get_rate(Topic) ->
-  [{_, Rate}] = ets:lookup(?TAB, {setting, Topic}),
+get_rate(Name) when is_binary(Name) ->
+  get_rate(list_to_atom(binary_to_list(Name)));
+get_rate(Name) when is_atom(Name) ->
+  [{_, Rate}] = ets:lookup(?TAB, {setting, Name}),
   Rate.
 
-maybe_block(Topic, Resetter) ->
-  case ets:update_counter(?TAB, Topic, -1) of
+maybe_block(Resetter) ->
+  case ets:update_counter(?TAB, Resetter, -1) of
     Cnt when Cnt < 0 ->
       Resetter ! {self(), blocked},
       receive
         unblock ->
-          maybe_block(Topic, Resetter)
+          maybe_block(Resetter)
       end;
     _ ->
       false
@@ -97,8 +98,8 @@ new_tab()->
                 , {read_concurrency, true}
                 ]).
 
-resetter_registerd_name(Topic) ->
-  list_to_atom("ratelimiter" ++ binary_to_list(Topic)).
+resetter_registerd_name(Id) when is_atom(Id) ->
+  Id.
 
 wait_for_resetter(Name) ->
   case whereis(Name) of

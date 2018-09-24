@@ -196,12 +196,13 @@ t_ratelimiter_filter_change_rate(Config) when is_list(Config) ->
   UPSTREAM = <<"brucke-ratelimiter-filter-test-upstream">>,
   DOWNSTREAM = <<"brucke-ratelimiter-filter-test-downstream">>,
   Client = client_1,
+  FilterId = rlt1,
   ok = wait_for_subscriber(client_3, UPSTREAM),
   ok = brod:start_producer(Client, UPSTREAM, []),
   {ok, Offset} = brod:resolve_offset(?HOSTS, DOWNSTREAM, 0, latest),
-  ?assertEqual(0, brucke_ratelimiter_filter:get_rate(UPSTREAM)),
-  set_rate_limiter(UPSTREAM, 10),
-  ?assertEqual(10, brucke_ratelimiter_filter:get_rate(UPSTREAM)),
+  ?assertEqual(0, brucke_ratelimiter_filter:get_rate(FilterId)),
+  set_rate_limiter(FilterId, 10),
+  ?assertEqual(10, brucke_ratelimiter_filter:get_rate(FilterId)),
   [brod:produce_sync(Client, UPSTREAM, 0, << "foo" >>, << "bar" >>) || _V <- lists:seq(1,100)],
   timer:sleep(3000),
   {ok, Offset2} = brod:resolve_offset(?HOSTS, DOWNSTREAM, 0, latest),
@@ -216,6 +217,7 @@ t_ratelimiter_filter_topic_rate(Config) when is_list(Config) ->
   UPSTREAM = <<"brucke-ratelimiter-filter-test-upstream">>,
   DOWNSTREAM = <<"brucke-ratelimiter-filter-test-downstream">>,
   Client = client_1,
+  FilterId = rlt1,
   Partitions = [0, 1, 2],
   GetLatestPartitionOffsets = fun() ->
                                   lists:map(fun(P) ->
@@ -228,7 +230,7 @@ t_ratelimiter_filter_topic_rate(Config) when is_list(Config) ->
   ok = brod:start_producer(Client, UPSTREAM, []),
 
   %%% pause
-  set_rate_limiter(UPSTREAM, 0),
+  set_rate_limiter(FilterId, 0),
   ct:sleep(1000),
 
   ?assertEqual(0, brucke_ratelimiter_filter:get_rate(UPSTREAM)),
@@ -237,9 +239,9 @@ t_ratelimiter_filter_topic_rate(Config) when is_list(Config) ->
 
   [brod:produce_sync(Client, UPSTREAM, P, << "foo2" >>, << "bar" >>) || _V <- lists:seq(1, 300), P <- Partitions],
 
-  set_rate_limiter(UPSTREAM, 100),
+  set_rate_limiter(FilterId, 100),
 
-  ?assertEqual(100, brucke_ratelimiter_filter:get_rate(UPSTREAM)),
+  ?assertEqual(100, brucke_ratelimiter_filter:get_rate(FilterId)),
 
   timer:sleep(3000),
 
