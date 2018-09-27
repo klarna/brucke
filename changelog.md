@@ -25,4 +25,5 @@
     * Support magic-v2 message format (message timestamp and headers).
 - 1.15.1
     * Allow single new format message as filter result
-
+- 1.16.0
+    * Add reate limit plugin
