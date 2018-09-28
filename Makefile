@@ -1,6 +1,6 @@
 PROJECT = brucke
 PROJECT_DESCRIPTION = Inter-cluster bridge of kafka topics
-PROJECT_VERSION = $(shell cat VSN)
+PROJECT_VERSION = $(shell erl -noshell -eval "{ok, [{_, _, L}]} = file:consult('src/brucke.app.src'), io:put_chars([V || {vsn, V} <- L]), halt(0)")
 
 all: compile
 
@@ -83,10 +83,6 @@ rpm: rel
 			--define "_description $(PROJECT_DESCRIPTION)" \
 			--define "_version $(PROJECT_VERSION)" \
 			rpm/brucke.spec
-
-.PHONY: vsn-check
-vsn-check:
-	@./scripts/vsn-check.sh $(PROJECT_VERSION)
 
 .PHONY: hex-publish
 hex-publish: distclean

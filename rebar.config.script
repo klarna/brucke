@@ -1,9 +1,16 @@
-{ok, Bin} = file:read_file("VSN"),
-Version = binary_to_list(binary:replace(Bin, <<"\n">>, <<>>)),
-{relx, RelxOptions0} = lists:keyfind(relx, 1, CONFIG),
-{release, {brucke, _}, Apps} = lists:keyfind(release, 1, RelxOptions0),
-RelxOptions = lists:keystore(release, 1, RelxOptions0, {release, {brucke, Version}, Apps}),
-CONFIG1 = lists:keystore(relx, 1, CONFIG, {relx, RelxOptions}),
+CONFIG1 =
+  case file:consult("src/brucke.app.src") of
+    {ok, [{_, _, L}]} ->
+      {vsn, Version} = lists:keyfind(vsn, 1, L),
+      {relx, RelxOptions0} = lists:keyfind(relx, 1, CONFIG),
+      {release, {brucke, _}, Apps} = lists:keyfind(release, 1, RelxOptions0),
+      RelxOptions = lists:keystore(release, 1, RelxOptions0, {release, {brucke, Version}, Apps}),
+      lists:keystore(relx, 1, CONFIG, {relx, RelxOptions});
+    {error, enoent} ->
+      %% evaluated as a dependency of other projects
+      %% can't be a release, do nothing
+      CONFIG
+  end,
 case os:getenv("TRAVIS") of
   "true" ->
     JobId = os:getenv("TRAVIS_JOB_ID"),

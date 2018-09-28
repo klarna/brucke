@@ -386,11 +386,16 @@ apply_route_schema([{K, V} | Rest], Schema, Defaults, Result, Errors) ->
     {ok, Fun} ->
       NewSchema = maps:remove(K, Schema),
       NewResult = Result#{K => V},
-      case Fun(NewResult, V) of
+      try Fun(NewResult, V) of
         true ->
           apply_route_schema(Rest, NewSchema, Defaults, NewResult, Errors);
         Error ->
           NewErrors = [Error | Errors],
+          apply_route_schema(Rest, NewSchema, Defaults, NewResult, NewErrors)
+      catch
+        C : E : Stack ->
+          NewErrors = [fmt("crashed valiating ~p: ~p:~p\n~p",
+                           [K, C, E, Stack]) | Errors],
           apply_route_schema(Rest, NewSchema, Defaults, NewResult, NewErrors)
       end;
     error ->
@@ -666,8 +671,15 @@ clean_setup(IsConfiguredClientId) ->
     ok
   end,
   meck:new(brucke_config, [no_passthrough_cover]),
-  meck:expect(brucke_config, is_configured_client_id, 1, IsConfiguredClientId),
-  meck:expect(brucke_config, get_cluster_name, 1, <<"group-id">>),
+  case IsConfiguredClientId of
+    true ->
+      meck:expect(brucke_config, is_configured_client_id, 1, true),
+      meck:expect(brucke_config, get_cluster_name, 1, <<"group-id">>);
+    false ->
+      meck:expect(brucke_config, is_configured_client_id, 1, false),
+      meck:expect(brucke_config, get_cluster_name, 1,
+                  fun(Id) -> erlang:error({bad_client_id, Id}) end)
+  end,
   ok.
 
 all_sorted() -> lists:keysort(#route.upstream, all()).
