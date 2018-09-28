@@ -92,8 +92,12 @@ is_configured_client_id(ClientId) when is_atom(ClientId) ->
 
 -spec get_cluster_name(brod:client_id()) -> cluster_name().
 get_cluster_name(ClientId) when is_atom(ClientId) ->
-  {ClientId, ClusterName, _Config} = lookup(ClientId),
-  ClusterName.
+  case lookup(ClientId) of
+    {ClientId, ClusterName, _Config} ->
+      ClusterName;
+    false ->
+      erlang:error({bad_client_id, ClientId})
+  end.
 
 -spec all_clients() -> [client()].
 all_clients() ->

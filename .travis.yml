@@ -16,12 +16,13 @@ otp_release:
   - 21.0
 
 script:
-  - make vsn-check
   - make xref
   - make dialyzer
   - make edoc
   - make test-env
   - make t
-  - make coveralls
   - make cover
+
+after_success:
+  - make coveralls
 
