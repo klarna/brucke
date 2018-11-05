@@ -91,3 +91,7 @@ hex-publish: distclean
 .PHONY: coveralls
 coveralls:
 	@$(rebar_cmd) coveralls send
+
+.PHONY: escript
+escript:
+	@$(rebar_cmd) escriptize

@@ -20,6 +20,7 @@
         , health_status/0
         , get_cg_id/1
         , add_skipped_route/2
+        , get_discarded/0
         ]).
 
 -include("brucke_int.hrl").
@@ -82,9 +83,13 @@ health_status() ->
   {Healthy0, Unhealthy0} = lists:partition(fun is_healthy/1, all()),
   Healthy = lists:map(fun format_route/1, Healthy0),
   Unhealthy = lists:map(fun format_route/1, Unhealthy0),
-  Discarded = lists:map(fun format_skipped_route/1,
-                        ets:tab2list(?T_DISCARDED_ROUTES)),
-  #{healthy => Healthy, unhealthy => Unhealthy, discarded => Discarded}.
+  #{healthy => Healthy, unhealthy => Unhealthy,
+    discarded => get_discarded()}.
+
+%% @doc Get all discarded routes.
+get_discarded() ->
+  lists:map(fun format_skipped_route/1,
+            ets:tab2list(?T_DISCARDED_ROUTES)).
 
 %% @doc Get upstream consumer group ID from route options.
 %% If no `upstream_cg_id' configured, build it from cluster name.

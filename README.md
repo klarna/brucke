@@ -187,6 +187,21 @@ Operating via systemctl:
     systemctl enable brucke
     systemctl status brucke
 
+# Script for config validation
+
+Build:
+```
+make escript
+```
+
+Usage:
+```
+brucke <path/to/config.yml>
+```
+
+Set `BRUCKE_FILTER_MODULE_BEAM_DIRS` for extra filter module beam lookup.
+For valid configs the validation command should silently exit with code 0.
+
 # Http Endpoint for Healcheck
 
 Default port is 8080, customize via `http_port` config option or via `BRUCKE_HTTP_PORT` OS env variable.

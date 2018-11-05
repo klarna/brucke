@@ -48,12 +48,14 @@
 -module(brucke_config).
 
 -export([ init/0
+        , init/1
         , is_configured_client_id/1
         , get_cluster_name/1
         , all_clients/0
         , get_client_endpoints/1
         ]).
 
+%% Exported for test
 -export([ validate_client_config/2
         ]).
 
@@ -72,6 +74,9 @@
 -spec init() -> ok | no_return().
 init() ->
   File = assert_file(brucke_app:config_file()),
+  init(File).
+
+init(File) ->
   yamerl_app:set_param(node_mods, [yamerl_node_erlang_atom]),
   try
     [Configs] = yamerl_constr:file(File, [{erlang_atom_autodetection, true}]),
@@ -80,7 +85,7 @@ init() ->
       ?GET_STACKTRACE(Stack),
       lager:emergency("failed to load brucke config file ~s: ~p:~p\n~p",
                       [File, C, E, Stack]),
-      exit({bad_brucke_config, File})
+      exit({bad_brucke_config, File, Stack})
   end.
 
 -spec is_configured_client_id(brod:client_id()) -> boolean().
@@ -167,9 +172,6 @@ do_init(Configs) ->
   try
     init(Clusters, Clients, Routes)
   catch
-    exit : Reason ->
-      ok = destroy(),
-      erlang:exit(Reason);
     error : Reason ?BIND_STACKTRACE(Stack) ->
       ?GET_STACKTRACE(Stack),
       ok = destroy(),
