@@ -150,7 +150,7 @@ handle_info({'DOWN', Ref, process, _Pid, _Reason},
             #{downstream_client_mref := Ref} = State) ->
   {stop, downstream_client_down, State};
 handle_info(Info, State) ->
-  lager:error("Unknown info: ~p", [Info]),
+  logger:error("Unknown info: ~p", [Info]),
   {noreply, State}.
 
 handle_call(get_cg_id, _From, #{cg_id := GroupId} = State) ->
@@ -160,7 +160,7 @@ handle_call(is_healthy, _From, State) ->
   Res = lists:all(fun(#subscriber{pid = Pid}) -> is_pid(Pid) end, Subscribers),
   {reply, Res, State};
 handle_call(Call, _From, State) ->
-  lager:error("Unknown call: ~p", [Call]),
+  logger:error("Unknown call: ~p", [Call]),
   {reply, {error, unknown_call}, State}.
 
 handle_cast({assignments_received, MemberId, GenerationId, Assignments},
@@ -177,7 +177,7 @@ handle_cast(assignments_revoked, #{subscribers := Subscribers} = State) ->
   ok = stop_subscribers(Subscribers),
   {noreply, State#{subscribers := []}};
 handle_cast(Cast, State) ->
-  lager:error("Unknown cast: ~p", [Cast]),
+  logger:error("Unknown cast: ~p", [Cast]),
   {noreply, State}.
 
 terminate(_Reason, #{coordinator := Coordinator} = _State) ->
@@ -230,8 +230,8 @@ handle_ack(#{ subscribers   := Subscribers
                                       Partition, Offset),
       State#{subscribers := NewSubscribers};
     false ->
-      lager:info("discarded ack ~s:~w:~w",
-                 [fmt_route(Route), Partition, Offset]),
+      logger:info("discarded ack ~s:~w:~w",
+                  [fmt_route(Route), Partition, Offset]),
       State
   end.
 
@@ -240,8 +240,8 @@ handle_subscriber_down(#{ subscribers := Subscribers
                         } = State, Pid, Reason) ->
   case lists:keyfind(Pid, #subscriber.pid, Subscribers) of
     #subscriber{partition = Partition} = Subscriber ->
-      lager:error("subscriber ~s:~p down, reason:\n~p",
-                  [fmt_route(Route), Partition, Reason]),
+      logger:error("subscriber ~s:~p down, reason:\n~p",
+                   [fmt_route(Route), Partition, Reason]),
       NotPid =
         case Reason of
           normal ->

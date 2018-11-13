@@ -83,8 +83,8 @@ init(File) ->
     do_init(Configs)
   catch C : E ?BIND_STACKTRACE(Stack) ->
       ?GET_STACKTRACE(Stack),
-      lager:emergency("failed to load brucke config file ~s: ~p:~p\n~p",
-                      [File, C, E, Stack]),
+      logger:emergency("failed to load brucke config file ~s: ~p:~p\n~p",
+                       [File, C, E, Stack]),
       exit({bad_brucke_config, File, Stack})
   end.
 
@@ -138,7 +138,7 @@ assert_file(Path) ->
     true ->
       Path;
     false ->
-      lager:emergency("~s is not a regular file", [Path]),
+      logger:emergency("~s is not a regular file", [Path]),
       exit({bad_brucke_config_file, Path})
   end.
 
@@ -149,7 +149,7 @@ do_init(Configs) ->
            {K, V} ->
              V;
            false ->
-             lager:emergency("~p is not found in config", [K]),
+             logger:emergency("~p is not found in config", [K]),
              exit({mandatory_config_entry_not_found, K})
          end
        end,
@@ -160,7 +160,7 @@ do_init(Configs) ->
     ?undef ->
       ok;
     _ ->
-      lager:emergency("config already loaded"),
+      logger:emergency("config already loaded"),
       exit({?ETS, already_created})
   end,
   ?ETS = ets:new(?ETS, [named_table, protected, set]),
@@ -195,16 +195,16 @@ lookup(Key) ->
 
 -spec init(config(), config(), config()) -> ok | no_return().
 init(Clusters, _, _) when not is_list(Clusters) orelse Clusters == [] ->
-  lager:emergency("Expecting list of kafka clusters "
-                  "Got ~P\n", [Clusters, 9]),
+  logger:emergency("Expecting list of kafka clusters "
+                   "Got ~P\n", [Clusters, 9]),
   exit(bad_cluster_list);
 init(_, Clients, _) when not is_list(Clients) orelse Clients == [] ->
-  lager:emergency("Expecting list of brod clients "
-                  "Got ~P\n", [Clients, 9]),
+  logger:emergency("Expecting list of brod clients "
+                   "Got ~P\n", [Clients, 9]),
   exit(bad_client_list);
 init(_, _, Routes) when not is_list(Routes) orelse Routes == [] ->
-  lager:emergency("Expecting list of brucke routes "
-                  "Got ~P\n", [Routes, 9]),
+  logger:emergency("Expecting list of brucke routes "
+                   "Got ~P\n", [Routes, 9]),
   exit(bad_route_list);
 init(Clusters, Clients, Routes) ->
   lists:foreach(
@@ -214,7 +214,7 @@ init(Clusters, Clients, Routes) ->
         false ->
           ok;
         {ClusterName, _} ->
-          lager:emergency("Duplicated cluster name ~p", [ClusterName]),
+          logger:emergency("Duplicated cluster name ~p", [ClusterName]),
           exit({duplicated_cluster_name, ClusterName})
       end,
       ets:insert(?ETS, {ClusterName, Endpoints})
@@ -225,13 +225,13 @@ init(Clusters, Clients, Routes) ->
       case lookup(ClientId) of
         false -> ok;
         _ ->
-          lager:emergency("Duplicated brod client id ~p", [ClientId]),
+          logger:emergency("Duplicated brod client id ~p", [ClientId]),
           exit({duplicated_brod_client_id, ClientId})
       end,
       case lookup(ClusterName) of
         false ->
-          lager:emergency("Cluster name ~s for client ~p is not found",
-                          [ClusterName, ClientId]),
+          logger:emergency("Cluster name ~s for client ~p is not found",
+                           [ClusterName, ClientId]),
           exit({cluster_not_found_for_client, ClusterName, ClientId});
         _ ->
           ok
@@ -244,8 +244,8 @@ validate_cluster({ClusterId, [_|_] = Endpoints}) ->
   {ensure_binary(ClusterId),
    [validate_endpoint(Endpoint) || Endpoint <- Endpoints]};
 validate_cluster(Other) ->
-  lager:emergency("Expecing cluster config with cluster id "
-                  "and a list of hostname:port endpoints"),
+  logger:emergency("Expecing cluster config with cluster id "
+                   "and a list of hostname:port endpoints"),
   exit({bad_cluster_config, Other}).
 
 validate_client(Client) ->
@@ -265,8 +265,8 @@ validate_client(Client) ->
   catch
     error : Reason ?BIND_STACKTRACE(Stack) ->
       ?GET_STACKTRACE(Stack),
-      lager:emergency("Bad brod client config: ~P.\nreason=~p\nstack=~p",
-                      [Client, 9, Reason, Stack]),
+      logger:emergency("Bad brod client config: ~P.\nreason=~p\nstack=~p",
+                       [Client, 9, Reason, Stack]),
       exit(bad_client_config)
   end.
 
@@ -295,8 +295,8 @@ validate_endpoint(Other) ->
   exit_on_bad_endpoint(Other).
 
 exit_on_bad_endpoint(Bad) ->
-  lager:emergency("Expecting endpoints string of patern Host:Port\n"
-                  "Got ~P", [Bad, 9]),
+  logger:emergency("Expecting endpoints string of patern Host:Port\n"
+                   "Got ~P", [Bad, 9]),
   exit(bad_endpoint).
 
 %% @hidden Exported for test
@@ -305,8 +305,8 @@ validate_client_config(ClientId, Config) when is_list(Config) ->
               do_validate_client_config(ClientId, ConfigEntry)
             end, Config);
 validate_client_config(ClientId, Config) ->
-  lager:emergency("Expecing client config to be a list for client ~p.\nGot:~p",
-                  [ClientId, Config]),
+  logger:emergency("Expecing client config to be a list for client ~p.\nGot:~p",
+                   [ClientId, Config]),
   exit(bad_client_config).
 
 do_validate_client_config(ClientId, {ssl, Options}) ->
@@ -316,8 +316,8 @@ do_validate_client_config(ClientId, {sasl, Options}) ->
 do_validate_client_config(_ClientId, {_, _} = ConfigEntry) ->
   ConfigEntry;
 do_validate_client_config(ClientId, Other) ->
-  lager:emergency("Unknown client config entry for client ~p,"
-                  "expecting kv-pair\nGot:~p", [ClientId, Other]),
+  logger:emergency("Unknown client config entry for client ~p,"
+                   "expecting kv-pair\nGot:~p", [ClientId, Other]),
   exit(bad_client_config_entry).
 
 -spec validate_ssl_option(client_id(), true | list()) ->
@@ -362,7 +362,7 @@ validate_ssl_file(ClientId, Filename) ->
     true ->
       Path;
     false ->
-      lager:emergency("ssl file ~p not found for client ~p", [Path, ClientId]),
+      logger:emergency("ssl file ~p not found for client ~p", [Path, ClientId]),
       exit(bad_ssl_file)
   end.
 
@@ -380,7 +380,7 @@ validate_sasl_mechanism(_ClientId, "plain") -> true;
 validate_sasl_mechanism(_ClientId, "scram_sha_256") -> true;
 validate_sasl_mechanism(_ClientId, "scram_sha_512") -> true;
 validate_sasl_mechanism(ClientId, Other) ->
-  lager:emergency("Unknown sasl mechanism ~p is for client ~p", [Other, ClientId]),
+  logger:emergency("Unknown sasl mechanism ~p is for client ~p", [Other, ClientId]),
   exit(bad_sasl_mechanism).
 
 do_validate_sasl_option(ClientId, Option, SaslOptions) ->
@@ -388,7 +388,7 @@ do_validate_sasl_option(ClientId, Option, SaslOptions) ->
     {_, Value} when is_list(Value) -> Value;
     {_, Value} when is_atom(Value) -> atom_to_list(Value);
     false ->
-      lager:emergency("SASL ~p is not specified or in wrong format for client ~p", [Option, ClientId]),
+      logger:emergency("SASL ~p is not specified or in wrong format for client ~p", [Option, ClientId]),
       exit(bad_sasl_credentials)
   end.
 

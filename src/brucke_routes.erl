@@ -58,7 +58,7 @@ init(Routes) when is_list(Routes) ->
     erlang:C({E, Stack})
   end;
 init(Other) ->
-  lager:emergency("Expecting list of routes, got ~P", [Other, 9]),
+  logger:emergency("Expecting list of routes, got ~P", [Other, 9]),
   erlang:exit(bad_routes_config).
 
 %% @doc Delete Ets.
