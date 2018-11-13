@@ -22,7 +22,7 @@ sudo KAFKA_VERSION=${KAFKA_VERSION} docker-compose -f docker-compose.yml up -d
 
 ## wait 4 secons for kafka to be ready
 n=0
-while [ "$(sudo docker exec kafka-1 bash -c '/opt/kafka/bin/kafka-topics.sh --zookeeper zookeeper --list')" != '' ]; do
+while [ "$(sudo docker exec kafka-1 bash -c '/opt/kafka/bin/kafka-topics.sh --zookeeper localhost --list')" != '' ]; do
   if [ $n -gt 4 ]; then
     echo "timedout waiting for kafka"
     exit 1
@@ -35,7 +35,7 @@ function create_topic {
   TOPIC_NAME="$1"
   PARTITIONS="${2:-1}"
   REPLICAS="${3:-1}"
-  CMD="/opt/kafka/bin/kafka-topics.sh --zookeeper zookeeper --create --partitions $PARTITIONS --replication-factor $REPLICAS --topic $TOPIC_NAME"
+  CMD="/opt/kafka/bin/kafka-topics.sh --zookeeper localhost --create --partitions $PARTITIONS --replication-factor $REPLICAS --topic $TOPIC_NAME"
   sudo docker exec kafka-1 bash -c "$CMD"
 }
 
@@ -67,4 +67,4 @@ create_topic brucke-filter-consumer-managed-offsets-test-downstream 3 2
 sudo docker exec kafka-1 /opt/kafka/bin/kafka-consumer-groups.sh --bootstrap-server localhost:9092 --new-consumer --group test-group --describe > /dev/null 2>&1
 
 # for kafka 0.11 or later, add sasl-scram test credentials
-sudo docker exec kafka-1 /opt/kafka/bin/kafka-configs.sh --zookeeper zookeeper:2181 --alter --add-config 'SCRAM-SHA-256=[iterations=8192,password=ecila],SCRAM-SHA-512=[password=ecila]' --entity-type users --entity-name alice
+sudo docker exec kafka-1 /opt/kafka/bin/kafka-configs.sh --zookeeper localhost:2181 --alter --add-config 'SCRAM-SHA-256=[iterations=8192,password=ecila],SCRAM-SHA-512=[password=ecila]' --entity-type users --entity-name alice
