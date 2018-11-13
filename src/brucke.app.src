@@ -1,6 +1,6 @@
 {application,brucke,
              [{description,"Inter-cluster bridge of kafka topics"},
-              {vsn,"1.16.1"},
+              {vsn,"1.17.0"},
               {registered, [brucke_sup]},
               {applications, [kernel, stdlib, brod, yamerl, graphiter, cowboy, jsone]},
               {env,[]},
