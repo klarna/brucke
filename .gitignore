@@ -25,5 +25,6 @@ x86_64/
 .idea/
 brod-*/
 brod.zip
+brod.tar.gz
 *.log
 *.crashdump

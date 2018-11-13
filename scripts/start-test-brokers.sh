@@ -10,8 +10,11 @@ BROD_VSN=$(erl -noinput -eval "
                 io:format(Version),
                 erlang:halt(0).")
 
-wget -O brod.zip https://github.com/klarna/brod/archive/$BROD_VSN.zip -o brod.zip
-unzip -qo brod.zip || true
+if [ ! -d "./brod-$BROD_VSN" ]; then
+  curl -L -o brod.tar.gz "https://github.com/klarna/brod/archive/${BROD_VSN}.tar.gz"
+  tar -zxf brod.tar.gz
+fi
+
 cd "./brod-$BROD_VSN/scripts"
 
 sudo KAFKA_VERSION=${KAFKA_VERSION} docker-compose -f docker-compose.yml down || true
