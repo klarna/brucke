@@ -196,7 +196,7 @@ make escript
 
 Usage:
 ```
-brucke <path/to/config.yml>
+brucke <path/to/config.yml> [filter-module-ebin-dir ...]
 ```
 
 Set `BRUCKE_FILTER_MODULE_BEAM_DIRS` for extra filter module beam lookup.

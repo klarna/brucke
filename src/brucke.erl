@@ -19,14 +19,9 @@
 
 -export([main/1]).
 
-main([File]) ->
-  case os:getenv("BRUCKE_FILTER_MODULE_BEAM_DIRS") of
-    false -> ok;
-    Dirs0 ->
-      Dirs = string:tokens(Dirs0, ":"),
-      ok = code:add_paths(Dirs)
-  end,
-  ok = brucke_config:init(File),
+main([ConfigFile | FilterModuleEbinPaths]) ->
+  ok = code:add_paths(FilterModuleEbinPaths),
+  ok = brucke_config:init(ConfigFile),
   Discarded = brucke_routes:get_discarded(),
   Discarded =/= [] andalso error({discarded, Discarded}).
 
