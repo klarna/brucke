@@ -38,7 +38,7 @@ init() ->
       set_route_path(Paths),
       Dispatch = cowboy_router:compile(routes(Paths)),
 
-      lager:info("Starting http listener on port ~p", [Port]),
+      logger:info("Starting http listener on port ~p", [Port]),
 
       case cowboy:start_http(?HTTP_LISTENER, 8, [{port, Port}],
                                   [ {env, [{dispatch, Dispatch}]}
@@ -58,7 +58,7 @@ error_hook(Code, _Headers, _Body, Req) ->
   {Path, _} = cowboy_req:path(Req),
   {{Ip, _Port}, _} = cowboy_req:peer(Req),
   Level = log_level(Code),
-  lager:log(Level, self(), "~s ~s ~b ~p ~s", [Method, Path, Code, Version, inet:ntoa(Ip)]),
+  logger:Level(self(), "~s ~s ~b ~p ~s", [Method, Path, Code, Version, inet:ntoa(Ip)]),
   Req.
 
 log_level(Code) when Code < 400 -> info;

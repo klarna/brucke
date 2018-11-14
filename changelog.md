@@ -27,3 +27,7 @@
     * Allow single new format message as filter result
 - 1.16.0
     * Add reate limit plugin
+- 1.17.0
+    * Add escript for config validation
+    * Logger replace lager
+    * Upgrade brod from 3.7.0 to 3.7.2

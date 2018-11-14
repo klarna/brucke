@@ -33,12 +33,12 @@ fmt_route(#route{upstream = Upstream, downstream = Downstream}) ->
 
 -spec log_skipped_route_alert(route() | raw_route(), iodata()) -> ok.
 log_skipped_route_alert(#route{} = Route, Reasons) ->
-  lager:alert("SKIPPING bad route: ~s\nREASON(s):~s",
-              [fmt_route(Route), Reasons]),
+  logger:alert("SKIPPING bad route: ~s\nREASON(s):~s",
+               [fmt_route(Route), Reasons]),
   ok;
 log_skipped_route_alert(Route, Reasons) ->
-  lager:alert("SKIPPING bad route: ~p\nREASON(s):~s",
-              [Route, Reasons]),
+  logger:alert("SKIPPING bad route: ~p\nREASON(s):~s",
+               [Route, Reasons]),
   ok.
 
 -spec get_repartitioning_strategy(route_options()) -> repartitioning_strategy().

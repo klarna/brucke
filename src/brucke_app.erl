@@ -74,8 +74,8 @@ maybe_set_app_env(EnvVarName, AppVarName, Type) ->
     []    -> ok;
     X ->
       Value = transform_env_var_value(X, Type),
-      lager:info("Setting app-env ~p from os-env ~s, value=~p",
-                 [AppVarName, EnvVarName, Value]),
+      logger:info("Setting app-env ~p from os-env ~s, value=~p",
+                  [AppVarName, EnvVarName, Value]),
       application:set_env(?APPLICATION, AppVarName, Value)
   end,
   ok.

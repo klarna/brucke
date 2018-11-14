@@ -120,9 +120,9 @@ handle_msg(_State, {_BrodConsumerPid,
                                       , partition = Partition
                                       , error_code = 'UnknownTopicOrPartition'
                                       }}) ->
-  lager:info("Topic ~s deleted? "
-             "subscriber for partition ~p is exiting with normal reason",
-             [Topic, Partition]),
+  logger:info("Topic ~s deleted? "
+              "subscriber for partition ~p is exiting with normal reason",
+              [Topic, Partition]),
   erlang:exit(normal);
 handle_msg(_State, Unknown) ->
   erlang:exit({unknown_message, Unknown}).
