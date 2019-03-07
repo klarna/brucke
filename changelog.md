@@ -31,3 +31,5 @@
     * Add escript for config validation
     * Logger replace lager
     * Upgrade brod from 3.7.0 to 3.7.2
+- 1.17.1
+    * Upgrade brod from 3.7.2 to 3.7.5
