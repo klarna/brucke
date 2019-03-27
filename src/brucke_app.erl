@@ -37,7 +37,7 @@ graphite_host() -> app_env(graphite_host).
 
 graphite_port() -> app_env(graphite_port).
 
-http_port() -> app_env(http_port, 8080).
+http_port() -> app_env(healthcheck_port, 8080).
 
 config_file() -> app_env(config_file, {priv, "brucke.yml"}).
 
