@@ -115,15 +115,6 @@ handle_msg(State, ?kafka_ack(UpstreamOffset, Ref)) ->
   handle_produce_reply(State, UpstreamOffset, Ref);
 handle_msg(State, {'DOWN', _Ref, process, Pid, _Reason}) ->
   handle_consumer_down(State, Pid);
-handle_msg(_State, {_BrodConsumerPid,
-                    #kafka_fetch_error{ topic = Topic
-                                      , partition = Partition
-                                      , error_code = 'UnknownTopicOrPartition'
-                                      }}) ->
-  logger:info("Topic ~s deleted? "
-              "subscriber for partition ~p is exiting with normal reason",
-              [Topic, Partition]),
-  erlang:exit(normal);
 handle_msg(_State, Unknown) ->
   erlang:exit({unknown_message, Unknown}).
 
