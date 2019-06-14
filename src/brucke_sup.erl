@@ -108,8 +108,6 @@ get_partition_count({ClientId, Topic}) ->
   case brod_client:get_partitions_count(ClientId, Topic) of
     {ok, Count} ->
       Count;
-    {error, 'UnknownTopicOrPartition'} ->
-      none;
     {error, Reason} ->
       exit({failed_to_get_partition_count, ClientId, Topic, Reason})
   end.
