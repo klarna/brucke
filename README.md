@@ -202,7 +202,7 @@ brucke <path/to/config.yml> [filter-module-ebin-dir ...]
 Set `BRUCKE_FILTER_MODULE_BEAM_DIRS` for extra filter module beam lookup.
 For valid configs the validation command should silently exit with code 0.
 
-# Http Endpoint for Healcheck
+# Http Endpoint for Healthcheck
 
 Default port is 8080, customize via `http_port` config option or via `BRUCKE_HTTP_PORT` OS env variable.
 
